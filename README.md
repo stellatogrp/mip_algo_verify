@@ -1,1 +1,1 @@
-# mip_perf_verify
+# Scalable algorithm certification for first-order methods via MIP
