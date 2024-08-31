@@ -4,6 +4,8 @@ import gurobipy as gp
 import jax
 import jax.numpy as jnp
 
+jnp.set_printoptions(precision=5)  # Print few decimal places
+jnp.set_printoptions(suppress=True)  # Suppress scientific notation
 jax.config.update("jax_enable_x64", True)
 log = logging.getLogger(__name__)
 
@@ -13,7 +15,7 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
                                  zbar, ybar, xbar):
     n = cfg.n
     model = gp.Model()
-    # pnorm = cfg.pnorm
+    pnorm = cfg.pnorm
 
     # Variable creation for iterates/parameter
     z, y = {}, {}
@@ -28,28 +30,31 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
     for i in range(n):
         x[i] = model.addVar(lb=x_LB[i], ub=x_UB[i])
 
-    # if pnorm == 1:
-    #     # Variable creation for obj
-    #     up, un, v = {}, {}, {}
-    #     for i in range(n):
-    #         Ui = z_UB[i,K] - z_LB[i,K-1]
-    #         Li = z_UB[i,K-1] - z_LB[i,K]
-    #         Mi = jnp.abs(jnp.max(jnp.array([Ui, Li])))
+    if pnorm == 1:
+        # Variable creation for obj
+        up, un, v = {}, {}, {}
+        for i in range(n):
+            Ui = z_UB[i,K] - z_LB[i,K-1]
+            Li = z_LB[i,K] - z_UB[i,K-1]
 
-    #         up[i] = model.addVar(lb=0, ub=Mi)
-    #         un[i] = model.addVar(lb=0, ub=Mi)
+            # should this be max of abs ?
+            # Mi = jnp.abs(jnp.max(jnp.array([Ui, Li])))
+            Mi = jnp.max(jnp.abs(jnp.array([Ui, Li])))
 
-    #         if Li > 0.0001:
-    #             model.addConstr(up[i] == z[i, K] - z[i, K-1])
-    #             model.addConstr(un[i] == 0)
-    #         elif Ui < -0.0001:
-    #             model.addConstr(un[1] == z[i, K-1] - z[i, K])
-    #             model.addConstr(up[i] == 0)
-    #         else:  # Li < 0 < Ui
-    #             v[i] = model.addVar(vtype=gp.GRB.BINARY)
-    #             model.addConstr(up[i] - un[i] == z[i, K] - z[i, K-1])
-    #             model.addConstr(up[i] <= Ui*v[i])
-    #             model.addConstr(un[i] <= jnp.abs(Li)*(1 - v[i]))
+            up[i] = model.addVar(lb=0, ub=Mi)
+            un[i] = model.addVar(lb=0, ub=Mi)
+
+            if Li > 0.0001:
+                model.addConstr(up[i] == z[i, K] - z[i, K-1])
+                model.addConstr(un[i] == 0)
+            elif Ui < -0.0001:
+                model.addConstr(un[i] == z[i, K-1] - z[i, K])
+                model.addConstr(up[i] == 0)
+            else:  # Li < 0 < Ui
+                v[i] = model.addVar(vtype=gp.GRB.BINARY)
+                model.addConstr(up[i] - un[i] == z[i, K] - z[i, K-1])
+                model.addConstr(up[i] <= Ui*v[i])
+                model.addConstr(un[i] <= jnp.abs(Li)*(1 - v[i]))
 
     # Variable creation for MIPing relu
     w = {}
@@ -79,12 +84,9 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
     model.update()
 
     # objective formulation
-    # if pnorm == 1:
-    #     model.setObjective(gp.quicksum((up[i] + un[i]) for i in range(n)), gp.GRB.MAXIMIZE)
+    if pnorm == 1:
+        model.setObjective(gp.quicksum((up[i] + un[i]) for i in range(n)), gp.GRB.MAXIMIZE)
 
-    model.setObjective(0, gp.GRB.MAXIMIZE)
-
-    # TODO: complete previous solution
 
     model.update()
 
@@ -181,6 +183,20 @@ def generate_P(cfg):
     return P
 
 
+def PGD(t, P, x, K):
+    n = P.shape[0]
+    z = jnp.zeros(n)
+
+    for i in range(1, K+1):
+        print(f'-{i}-')
+        y = (jnp.eye(n) - t * P) @ z - t * x
+        print('y:', y)
+        znew = jax.nn.relu(y)
+        print('z:', znew)
+        print(jnp.linalg.norm(znew - z, 1))
+        z = znew
+
+
 def NNQP_run(cfg):
     log.info(cfg)
     P = generate_P(cfg)
@@ -206,7 +222,16 @@ def NNQP_run(cfg):
                                                                  y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
                                                                  zbar, ybar, xbar)
         log.info(ybar)
-        log.info(zbar)
+        # log.info(zbar)
+        log.info(xbar)
+        Deltas.append(delta_k)
+    log.info(Deltas)
+
+    # xbar_vec = jnp.zeros(cfg.n)
+    # for i in range(cfg.n):
+    #     xbar_vec = xbar_vec.at[i].set(xbar[i])
+
+    # PGD(t, P, xbar_vec, K_max)
 
 
 def run(cfg):
