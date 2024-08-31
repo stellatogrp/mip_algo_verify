@@ -39,10 +39,13 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
 
             # should this be max of abs ?
             # Mi = jnp.abs(jnp.max(jnp.array([Ui, Li])))
-            Mi = jnp.max(jnp.abs(jnp.array([Ui, Li])))
+            # Mi = jnp.max(jnp.abs(jnp.array([Ui, Li])))
 
-            up[i] = model.addVar(lb=0, ub=Mi)
-            un[i] = model.addVar(lb=0, ub=Mi)
+            up[i] = model.addVar(lb=0, ub=jnp.abs(Ui))
+            un[i] = model.addVar(lb=0, ub=jnp.abs(Li))
+
+            # up[i] = model.addVar(lb=0, ub=Mi)
+            # un[i] = model.addVar(lb=0, ub=Mi)
 
             if Li > 0.0001:
                 model.addConstr(up[i] == z[i, K] - z[i, K-1])
@@ -96,7 +99,7 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
     return model.objVal, {(i,k): z[i,k].X for i, k in z}, {(i,k): y[i,k].X for i, k in y}, {j: x[j].X for j in x}
 
 
-def BoundTightY(K, A, B, t, cfg, basic=True):
+def BoundTightY(K, A, B, t, cfg, basic=False):
     n = cfg.n
     # A = jnp.zeros((n, n))
     # B = jnp.eye(n)
@@ -138,19 +141,73 @@ def BoundTightY(K, A, B, t, cfg, basic=True):
             z_LB[i, q] = jax.nn.relu(y_LB[i, q])
             z_UB[i, q] = jax.nn.relu(y_UB[i, q])
 
-    # for q in range(1, K+1):
-    #     for i in range(n):
-    #         if y_LB[i, q] < 0 and y_UB[i, q] > 0:
-    #             log.info((i, q))
-    #             log.info(y_LB[i, q])
-    #             log.info(z_LB[i, q])
-    #             log.info(y_UB[i, q])
-    #             log.info(z_UB[i, q])
-
     if basic:
         return y_LB, y_UB, z_LB, z_UB, x_LB, x_UB
 
     # TODO: implement advanced version
+
+    for kk in range(1, K+1):
+        log.info(f'^^^^^^^^ Bound tightening, K={kk} ^^^^^^^^^^')
+        for ii in range(n):
+
+            # TODO: move this loop inside and just update obj, constraints are same for kk and ii
+            for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+                model = gp.Model()
+                model.Params.OutputFlag = 0
+
+                z, y = {}, {}
+                for k in range(K+1):
+                    for i in range(n):
+                        if k == 0:
+                            z[i, k] = model.addVar(lb = z_LB[i, 0], ub=z_UB[i, 0])
+                        else:
+                            z[i, k] = model.addVar(lb=z_LB[i, k], ub=z_UB[i, k])
+                            y[i, k] = model.addVar(lb=y_LB[i, k], ub=y_UB[i, k])
+                x = {}
+                for i in range(n):
+                    x[i] = model.addVar(lb=x_LB[i], ub=x_UB[i])
+
+                model.setObjective(y[ii, kk], sense)
+
+                # add every affine constraint
+                for k in range(K):
+                    for i in range(n):
+                        model.addConstr(y[i,k+1] == gp.quicksum(A[i,j]*z[j,k] for j in range(n)) + gp.quicksum(B[i,j]*x[j] for j in range(n)))
+                # constraints on relu
+                for k in range(K):
+                    for i in range(n):
+                        if y_UB[i, k+1] < -0.00001:
+                            model.addConstr(z[i, k+1] == 0)
+                        elif y_LB[i, k+1] > 0.00001:
+                            model.addConstr(z[i, k+1] == y[i, k+1])
+                        else:
+                            model.addConstr(z[i, k+1] <= y_UB[i,k+1]/(y_UB[i, k+1] - y_LB[i, k+1]) * (y[i, k+1] - y_LB[i, k+1]))
+                            model.addConstr(z[i, k+1] >= y[i, k+1])
+
+                model.optimize()
+
+                if model.status != gp.GRB.OPTIMAL:
+                    print('bound tighting failes, GRB model status:', model.status)
+                    return None
+
+                # Update bounds
+                obj = model.objVal
+                if sense == gp.GRB.MAXIMIZE:
+                    y_UB[ii, kk] = min(y_UB[ii, kk], obj)
+                    z_UB[ii, kk] = jax.nn.relu(y_UB[ii, kk])
+
+                    model.setAttr(gp.GRB.Attr.UB, y[ii, kk], y_UB[ii, kk])
+                    model.setAttr(gp.GRB.Attr.UB, z[ii, kk], z_UB[ii, kk])
+                else:
+                    y_LB[ii, kk] = max(y_LB[ii, kk], obj)
+                    z_LB[ii, kk] = jax.nn.relu(y_LB[ii, kk])
+
+                    model.setAttr(gp.GRB.Attr.LB, y[ii, kk], y_LB[ii, kk])
+                    model.setAttr(gp.GRB.Attr.LB, z[ii, kk], z_LB[ii, kk])
+
+                model.update()
+
+    return y_LB, y_UB, z_LB, z_UB, x_LB, x_UB
 
 
 def generate_P(cfg):
@@ -212,7 +269,7 @@ def NNQP_run(cfg):
     B = -t * jnp.eye(cfg.n)
     K_max = cfg.K_max
 
-    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg)
+    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=True)
 
     Deltas = []
     zbar, ybar, xbar = None, None, None
@@ -221,7 +278,7 @@ def NNQP_run(cfg):
         delta_k, zbar, ybar, xbar = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
                                                                  y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
                                                                  zbar, ybar, xbar)
-        log.info(ybar)
+        # log.info(ybar)
         # log.info(zbar)
         log.info(xbar)
         Deltas.append(delta_k)

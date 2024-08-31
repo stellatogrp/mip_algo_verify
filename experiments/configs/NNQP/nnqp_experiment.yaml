@@ -1,4 +1,4 @@
-n: 10
+n: 20
 mu: 1
 L: 10
 num_zero_eigvals: 0
@@ -15,5 +15,5 @@ x:
   l: -11
   u: -10
 
-K_max: 8
+K_max: 10
 pnorm: 1
