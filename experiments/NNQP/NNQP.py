@@ -1,10 +1,97 @@
 import logging
 
+import gurobipy as gp
 import jax
 import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 log = logging.getLogger(__name__)
+
+
+def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
+                                 y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
+                                 zbar, ybar, xbar):
+    n = cfg.n
+    model = gp.Model()
+    # pnorm = cfg.pnorm
+
+    # Variable creation for iterates/parameter
+    z, y = {}, {}
+
+    for k in range(K+1):
+        for i in range(n):
+            z[i, k] = model.addVar(lb=z_LB[i, k], ub=z_UB[i, k])
+            if k > 0:
+                y[i, k] = model.addVar(lb=y_LB[i, k], ub=y_UB[i, k])
+
+    x = {}
+    for i in range(n):
+        x[i] = model.addVar(lb=x_LB[i], ub=x_UB[i])
+
+    # if pnorm == 1:
+    #     # Variable creation for obj
+    #     up, un, v = {}, {}, {}
+    #     for i in range(n):
+    #         Ui = z_UB[i,K] - z_LB[i,K-1]
+    #         Li = z_UB[i,K-1] - z_LB[i,K]
+    #         Mi = jnp.abs(jnp.max(jnp.array([Ui, Li])))
+
+    #         up[i] = model.addVar(lb=0, ub=Mi)
+    #         un[i] = model.addVar(lb=0, ub=Mi)
+
+    #         if Li > 0.0001:
+    #             model.addConstr(up[i] == z[i, K] - z[i, K-1])
+    #             model.addConstr(un[i] == 0)
+    #         elif Ui < -0.0001:
+    #             model.addConstr(un[1] == z[i, K-1] - z[i, K])
+    #             model.addConstr(up[i] == 0)
+    #         else:  # Li < 0 < Ui
+    #             v[i] = model.addVar(vtype=gp.GRB.BINARY)
+    #             model.addConstr(up[i] - un[i] == z[i, K] - z[i, K-1])
+    #             model.addConstr(up[i] <= Ui*v[i])
+    #             model.addConstr(un[i] <= jnp.abs(Li)*(1 - v[i]))
+
+    # Variable creation for MIPing relu
+    w = {}
+    for k in range(1, K+1):
+        for i in range(n):
+            w[i, k] = model.addVar(vtype=gp.GRB.BINARY)
+
+    # Constraints for affine step
+    for k in range(K):
+        for i in range(n):
+            model.addConstr(y[i,k+1] == gp.quicksum(A[i,j]*z[j,k] for j in range(n)) + gp.quicksum(B[i,j]*x[j] for j in range(n)))
+
+    # Constraints for relu
+    for k in range(K):
+        for i in range(n):
+            if y_UB[i, k+1] < -0.00001:
+                model.addConstr(z[i, k+1] == 0)
+            elif y_LB[i, k+1] > 0.00001:
+                model.addConstr(z[i, k+1] == y[i, k+1])
+            else:
+                # dont need z >= 0 b/c variable bounds take care of it
+                model.addConstr(z[i, k+1] <= y_UB[i,k+1]/(y_UB[i, k+1] - y_LB[i, k+1]) * (y[i, k+1] - y_LB[i, k+1]))
+                model.addConstr(z[i, k+1] >= y[i, k+1])
+                model.addConstr(z[i, k+1] <= y[i, k+1] - y_LB[i, k+1]*(1-w[i, k+1]))
+                model.addConstr(z[i, k+1] <= y_UB[i, k+1] * w[i, k+1])
+
+    model.update()
+
+    # objective formulation
+    # if pnorm == 1:
+    #     model.setObjective(gp.quicksum((up[i] + un[i]) for i in range(n)), gp.GRB.MAXIMIZE)
+
+    model.setObjective(0, gp.GRB.MAXIMIZE)
+
+    # TODO: complete previous solution
+
+    model.update()
+
+    model.optimize()
+    log.info(model.status)
+
+    return model.objVal, {(i,k): z[i,k].X for i, k in z}, {(i,k): y[i,k].X for i, k in y}, {j: x[j].X for j in x}
 
 
 def BoundTightY(K, A, B, t, cfg, basic=True):
@@ -110,6 +197,16 @@ def NNQP_run(cfg):
     K_max = cfg.K_max
 
     y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg)
+
+    Deltas = []
+    zbar, ybar, xbar = None, None, None
+    for k in range(1, K_max+1):
+        log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+        delta_k, zbar, ybar, xbar = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
+                                                                 y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
+                                                                 zbar, ybar, xbar)
+        log.info(ybar)
+        log.info(zbar)
 
 
 def run(cfg):
