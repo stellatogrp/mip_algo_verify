@@ -1,19 +1,20 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "mip_perf_verify"
-description = "Scalable algorithm certification for first-order methods via MIP"
+name = "mip_algo_verify"
+description = "Exact algorithm certification for first-order methods via mixed-integer programming"
 readme = "README.md"
 license = { text = "Apache 2.0" }
 dynamic = ["version"]
 authors = [
        { name = "Vinit Ranjan", email = "vranjan@princeton.edu" },
+       { name = "Stefano Gualandi", email = "stefano.gualandi@unipv.it " },
+       { name = "Andrea Lodi", email = "andrea.lodi@cornell.edu" },
        { name = "Bartolomeo Stellato", email = "bstellato@princeton.edu" },
 ]
-dependencies = ["cvxpy@git+https://github.com/cvxpy/cvxpy.git#egg=209660c",  # cvxpy numpy 2.0 fix ,
-                "jax"]
+dependencies = ["cvxpy", "jax"]
 
 [project.optional-dependencies]
 dev = [
@@ -27,14 +28,7 @@ dev = [
        "pandas"
 ]
 
-# Hatch environment that installs
-# "dev" optional dependencies
-[tool.hatch.envs.dev]
-features = ["dev"]
-
-# Get version from git
-[tool.hatch.version]
-source = "vcs"
+[tool.setuptools_scm]
 
 [tool.ruff]
 target-version = "py312"
@@ -44,7 +38,3 @@ exclude = ["build", "docs", "*__init__.py"]
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = ["E501", "E741"]
-
-# Allow git direct references
-[tool.hatch.metadata]
-allow-direct-references = true

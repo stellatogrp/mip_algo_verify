@@ -21,22 +21,32 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install OpenBLAS (needed for SCS)
+        run: sudo apt-get update && sudo apt-get install -y libopenblas-dev
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Gurobi License
-        shell: bash
-        env:
-          WLSLICENSE: ${{ secrets.WLSLICENSE }}
-        run: |
-          echo "$WLSLICENSE" > $HOME/gurobi.lic
-      - name: Install Hatch
-        uses: pypa/hatch@install
+
+      - name: Set up uv
+        # Install a specific uv version using the installer
+        run: curl -LsSf https://astral.sh/uv/0.4.1/install.sh | sh
+
+      # TODO (bart): we need to set up the correct WLS license for this
+      # - name: Install Gurobi License
+      #   shell: bash
+      #   env:
+      #     WLSLICENSE: ${{ secrets.WLSLICENSE }}
+      #   run: |
+      #     echo "$WLSLICENSE" > $HOME/gurobi.lic
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
+
       - name: Run tests
-        run: hatch run dev:pytest -s tests/
-      # - name: Build dist
-      #   run: hatch build
-      # - name: Publish on PyPI
-      #   if: github.ref == 'refs/heads/main'
-      #   run: hatch publish
+        # For example, using `pytest`
+        run: uv run pytest tests
+
+

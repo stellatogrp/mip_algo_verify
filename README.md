@@ -1,1 +1,1 @@
-# Scalable algorithm certification for first-order methods via MIP
+# Exact algorithm certification for first-order methods via mixed-integer programming
