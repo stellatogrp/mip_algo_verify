@@ -84,19 +84,39 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
                 model.addConstr(z[i, k+1] <= y[i, k+1] - y_LB[i, k+1]*(1-w[i, k+1]))
                 model.addConstr(z[i, k+1] <= y_UB[i, k+1] * w[i, k+1])
 
+    # TODO: complete previous solution and propagate forward
+
+    if zbar is not None:
+        for i, k in zbar:
+            z[i, k].Start = zbar[i,k]
+        for i, k in ybar:
+            y[i, k].Start = ybar[i,k]
+        for i in xbar:
+            x[i].Start = xbar[i]
+
+        # this is the forward propagation, the MIP seems to run slightly slower with it
+        # zKminus1 = jnp.zeros(n)
+        # xKminus1 = jnp.zeros(n)
+        # for i in range(n):
+        #     zKminus1 = zKminus1.at[i].set(zbar[i, K-1])
+        #     xKminus1 = xKminus1.at[i].set(xbar[i])
+        # ynew, znew = PGD_single(t, zKminus1, A, B, xKminus1)
+        # for i in range(n):
+        #     y[i, K].Start = ynew[i]
+        #     z[i, K].Start = znew[i]
+
     model.update()
 
     # objective formulation
     if pnorm == 1:
         model.setObjective(gp.quicksum((up[i] + un[i]) for i in range(n)), gp.GRB.MAXIMIZE)
 
-
     model.update()
 
     model.optimize()
     log.info(model.status)
 
-    return model.objVal, {(i,k): z[i,k].X for i, k in z}, {(i,k): y[i,k].X for i, k in y}, {j: x[j].X for j in x}
+    return model.objVal, model.Runtime, {(i,k): z[i,k].X for i, k in z}, {(i,k): y[i,k].X for i, k in y}, {j: x[j].X for j in x}
 
 
 def BoundTightY(K, A, B, t, cfg, basic=False):
@@ -149,8 +169,7 @@ def BoundTightY(K, A, B, t, cfg, basic=False):
     for kk in range(1, K+1):
         log.info(f'^^^^^^^^ Bound tightening, K={kk} ^^^^^^^^^^')
         for ii in range(n):
-
-            # TODO: move this loop inside and just update obj, constraints are same for kk and ii
+            # have to double loop and recreate the model here because of the updating bounds
             for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
                 model = gp.Model()
                 model.Params.OutputFlag = 0
@@ -167,14 +186,13 @@ def BoundTightY(K, A, B, t, cfg, basic=False):
                 for i in range(n):
                     x[i] = model.addVar(lb=x_LB[i], ub=x_UB[i])
 
-                model.setObjective(y[ii, kk], sense)
-
+                # TODO: do these need to go all the way to K? cant they stop at kk ?
                 # add every affine constraint
-                for k in range(K):
+                for k in range(kk):
                     for i in range(n):
                         model.addConstr(y[i,k+1] == gp.quicksum(A[i,j]*z[j,k] for j in range(n)) + gp.quicksum(B[i,j]*x[j] for j in range(n)))
                 # constraints on relu
-                for k in range(K):
+                for k in range(kk):
                     for i in range(n):
                         if y_UB[i, k+1] < -0.00001:
                             model.addConstr(z[i, k+1] == 0)
@@ -183,6 +201,8 @@ def BoundTightY(K, A, B, t, cfg, basic=False):
                         else:
                             model.addConstr(z[i, k+1] <= y_UB[i,k+1]/(y_UB[i, k+1] - y_LB[i, k+1]) * (y[i, k+1] - y_LB[i, k+1]))
                             model.addConstr(z[i, k+1] >= y[i, k+1])
+
+                model.setObjective(y[ii, kk], sense)
 
                 model.optimize()
 
@@ -254,6 +274,13 @@ def PGD(t, P, x, K):
         z = znew
 
 
+def PGD_single(t, z, A, B, x):
+    # n = A.shape[0]
+    y = A @ z + B @ x
+    z = jax.nn.relu(y)
+    return y, z
+
+
 def NNQP_run(cfg):
     log.info(cfg)
     P = generate_P(cfg)
@@ -269,20 +296,23 @@ def NNQP_run(cfg):
     B = -t * jnp.eye(cfg.n)
     K_max = cfg.K_max
 
-    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=True)
+    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=False)
 
     Deltas = []
+    solvetimes = []
     zbar, ybar, xbar = None, None, None
     for k in range(1, K_max+1):
         log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-        delta_k, zbar, ybar, xbar = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
+        delta_k, solvetime, zbar, ybar, xbar = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
                                                                  y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
                                                                  zbar, ybar, xbar)
         # log.info(ybar)
         # log.info(zbar)
         log.info(xbar)
         Deltas.append(delta_k)
-    log.info(Deltas)
+        solvetimes.append(solvetime)
+        log.info(Deltas)
+        log.info(solvetimes)
 
     # xbar_vec = jnp.zeros(cfg.n)
     # for i in range(cfg.n):
