@@ -15,5 +15,7 @@ x:
   l: -15
   u: -10
 
-K_max: 15
+basic_bounding: True  # True = basic interval prop only, False = LP based bounding
+
+K_max: 5
 pnorm: 1

@@ -119,6 +119,104 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
     return model.objVal, model.Runtime, {(i,k): z[i,k].X for i, k in z}, {(i,k): y[i,k].X for i, k in y}, {j: x[j].X for j in x}
 
 
+def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
+                                 y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
+                                 zbar, ybar, xbar):
+    n = cfg.n
+    model = gp.Model()
+    pnorm = cfg.pnorm
+
+    # Variable creation for iterates/parameter
+    z = {}
+    for k in range(K+1):
+        for i in range(n):
+            z[i, k] = model.addVar(lb=z_LB[i, k], ub=z_UB[i, k])
+
+    x = {}
+    for i in range(n):
+        x[i] = model.addVar(lb=x_LB[i], ub=x_UB[i])
+
+    w = {}
+    for k in range(1, K+1):
+        for i in range(n):
+            w[i, k] = model.addVar(vtype=gp.GRB.BINARY)
+
+    for k in range(K):
+        for i in range(n):
+            if y_UB[i, k+1] < -0.00001:
+                model.addConstr(z[i, k+1] == 0)
+            elif y_LB[i, k+1] > 0.00001:
+                z[i, k+1] = gp.quicksum(A[i,j]*z[j,k] for j in range(n)) + gp.quicksum(B[i,j]*x[j] for j in range(n))
+            else:
+                ykplus1 = gp.quicksum(A[i,j]*z[j,k] for j in range(n)) + gp.quicksum(B[i,j]*x[j] for j in range(n))
+
+                # model.addConstr(z[i, k+1] <= y_UB[i,k+1]/(y_UB[i, k+1] - y_LB[i, k+1]) * (y[i, k+1] - y_LB[i, k+1]))
+                # model.addConstr(z[i, k+1] >= y[i, k+1])
+                # model.addConstr(z[i, k+1] <= y[i, k+1] - y_LB[i, k+1]*(1-w[i, k+1]))
+                # model.addConstr(z[i, k+1] <= y_UB[i, k+1] * w[i, k+1])
+                model.addConstr(z[i, k+1] <= y_UB[i,k+1]/(y_UB[i, k+1] - y_LB[i, k+1]) * (ykplus1 - y_LB[i, k+1]))
+                model.addConstr(z[i, k+1] >= ykplus1)
+                model.addConstr(z[i, k+1] <= ykplus1 - y_LB[i, k+1]*(1-w[i, k+1]))
+                model.addConstr(z[i, k+1] <= y_UB[i, k+1] * w[i, k+1])
+
+    if zbar is not None:
+        # for i, k in zbar:
+        #     z[i, k].Start = zbar[i,k]
+        for i in xbar:
+            x[i].Start = xbar[i]
+
+    if pnorm == 1:
+        # Variable creation for obj
+        up, un, v = {}, {}, {}
+        for i in range(n):
+            Ui = z_UB[i,K] - z_LB[i,K-1]
+            Li = z_LB[i,K] - z_UB[i,K-1]
+
+            up[i] = model.addVar(lb=0, ub=jnp.abs(Ui))
+            un[i] = model.addVar(lb=0, ub=jnp.abs(Li))
+
+            if Li > 0.0001:
+                model.addConstr(up[i] == z[i, K] - z[i, K-1])
+                model.addConstr(un[i] == 0)
+            elif Ui < -0.0001:
+                model.addConstr(un[i] == z[i, K-1] - z[i, K])
+                model.addConstr(up[i] == 0)
+            else:  # Li < 0 < Ui
+                v[i] = model.addVar(vtype=gp.GRB.BINARY)
+                model.addConstr(up[i] - un[i] == z[i, K] - z[i, K-1])
+                model.addConstr(up[i] <= Ui*v[i])
+                model.addConstr(un[i] <= jnp.abs(Li)*(1 - v[i]))
+        model.setObjective(gp.quicksum((up[i] + un[i]) for i in range(n)), gp.GRB.MAXIMIZE)
+
+    model.update()
+
+    model.optimize()
+    log.info(model.status)
+
+    zout = {}
+    for k in range(K+1):
+        for i in range(n):
+            if isinstance(z[i, k], gp.Var):
+                zout[i, k] = z[i, k].X
+            else:
+                zout[i, k] = z[i, k].getValue()
+
+    # for i in range(n):
+    #     log.info(f'-{i}-')
+    #     log.info(f'up: {up[i].X}')
+    #     log.info(f'un: {un[i].X}')
+    #     log.info(f'up[i] - un[i]: {up[i].X-un[i].X}')
+    #     log.info(z[i, K].getValue())
+    #     if K == 1:
+    #         log.info(z[i, K-1].X)
+    #         log.info(z[i, K].getValue() - z[i, K-1].X)
+    #     else:
+    #         log.info(z[i, K-1].getValue())
+    #         log.info(z[i, K].getValue() - z[i, K-1].getValue())
+
+    return model.objVal, model.Runtime, zout, {j: x[j].X for j in x}
+
+
 def BoundTightY(K, A, B, t, cfg, basic=False):
     n = cfg.n
     # A = jnp.zeros((n, n))
@@ -163,8 +261,6 @@ def BoundTightY(K, A, B, t, cfg, basic=False):
 
     if basic:
         return y_LB, y_UB, z_LB, z_UB, x_LB, x_UB
-
-    # TODO: implement advanced version
 
     for kk in range(1, K+1):
         log.info(f'^^^^^^^^ Bound tightening, K={kk} ^^^^^^^^^^')
@@ -296,23 +392,44 @@ def NNQP_run(cfg):
     B = -t * jnp.eye(cfg.n)
     K_max = cfg.K_max
 
-    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=False)
+    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=cfg.basic_bounding)
 
     Deltas = []
     solvetimes = []
+    zbar_twostep, ybar, xbar_twostep = None, None, None
+    for k in range(1, K_max + 1):
+        log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_twostep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+        delta_k, solvetime, zbar_twostep, ybar, xbar_twostep = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
+                                                                 y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
+                                                                 zbar_twostep, ybar, xbar_twostep)
+        # log.info(ybar)
+        # log.info(zbar)
+        log.info(xbar_twostep)
+        Deltas.append(delta_k)
+        solvetimes.append(solvetime)
+        log.info(Deltas)
+        log.info(solvetimes)
+
+    Deltas_onestep = []
+    solvetimes_onestep = []
     zbar, ybar, xbar = None, None, None
-    for k in range(1, K_max+1):
-        log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-        delta_k, solvetime, zbar, ybar, xbar = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
+    for k in range(1, K_max + 1):
+        log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_onestep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+        delta_k, solvetime, zbar, xbar = VerifyPGD_withBounds_onestep(k, A, B, t, cfg, Deltas_onestep,
                                                                  y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
                                                                  zbar, ybar, xbar)
         # log.info(ybar)
         # log.info(zbar)
         log.info(xbar)
-        Deltas.append(delta_k)
-        solvetimes.append(solvetime)
-        log.info(Deltas)
-        log.info(solvetimes)
+        Deltas_onestep.append(delta_k)
+        solvetimes_onestep.append(solvetime)
+        log.info(Deltas_onestep)
+        log.info(solvetimes_onestep)
+
+    log.info(f'two step deltas: {Deltas}')
+    log.info(f'one step deltas: {Deltas_onestep}')
+    log.info(f'two step times: {solvetimes}')
+    log.info(f'one step times: {solvetimes_onestep}')
 
     # xbar_vec = jnp.zeros(cfg.n)
     # for i in range(cfg.n):
