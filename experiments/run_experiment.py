@@ -3,14 +3,19 @@ import sys
 
 import hydra
 import NNQP.NNQP as NNQP
+import NNQP.NNQP_vec as NNQP_vec
 
 log = logging.getLogger(__name__)
 
 
 @hydra.main(version_base='1.2', config_path='configs/NNQP', config_name='nnqp_experiment.yaml')
 def main_experiment_nnqp(cfg):
-    log.info('NNQP')
-    NNQP.run(cfg)
+    if cfg.vec:
+        log.info('NNQP vec')
+        NNQP_vec.run(cfg)
+    else:
+        log.info('NNQP')
+        NNQP.run(cfg)
 
 
 base_dir_map = {
