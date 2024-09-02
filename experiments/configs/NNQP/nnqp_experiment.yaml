@@ -17,7 +17,7 @@ x:
 
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
-K_max: 2
+K_max: 3
 pnorm: 1
 
 vec: True
