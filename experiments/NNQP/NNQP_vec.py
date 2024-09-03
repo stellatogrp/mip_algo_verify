@@ -1,4 +1,5 @@
 import logging
+import time
 
 import gurobipy as gp
 import jax
@@ -129,35 +130,39 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
 
         model.setObjective(gp.quicksum(up + un), gp.GRB.MAXIMIZE)
 
-    if cfg.callback and K == 3:
+    if cfg.callback:
         model.Params.lazyConstraints = 1
-        triangle_idx = []  # these are the indices that we actually need to bound
-        for i in range(n):
-            if y_UB[K, i] > 0.00001 and y_LB[K, i] < 0.00001:
-                triangle_idx.append(i)
-        # log.info(triangle_idx)
-        C = jnp.hstack([A, B])
-        L_hatC = jnp.zeros((n, 2*n))
-        U_hatC = jnp.zeros((n, 2*n))
+        triangle_idx = []
+        for j in range(n):
+            if y_UB[K, j] > 0.00001 and y_LB[K, j] < 0.00001:
+                triangle_idx.append(j)
+        L_hatA = jnp.zeros((n, n))
+        U_hatA = jnp.zeros((n, n))
+        L_hatB = jnp.zeros((n, n))
+        U_hatB = jnp.zeros((n, n))
 
         for i in range(n):
             for j in range(n):
-                if C[i, j] >= 0:
-                    L_hatC = L_hatC.at[i, j].set(z_LB[K-1, j])
-                    L_hatC = L_hatC.at[i, j+n].set(x_LB[j])
-
-                    U_hatC = U_hatC.at[i, j].set(z_UB[K-1, j])
-                    U_hatC = U_hatC.at[i, j+n].set(x_UB[j])
+                if A[i, j] >= 0:
+                    L_hatA = L_hatA.at[i, j].set(z_LB[K-1, j])
+                    U_hatA = U_hatA.at[i, j].set(z_UB[K-1, j])
                 else:
-                    L_hatC = L_hatC.at[i, j].set(z_UB[K-1, j])
-                    L_hatC = L_hatC.at[i, j+n].set(x_UB[j])
+                    L_hatA = L_hatA.at[i, j].set(z_UB[K-1, j])
+                    U_hatA = U_hatA.at[i, j].set(z_LB[K-1, j])
 
-                    U_hatC = U_hatC.at[i, j].set(z_LB[K-1, j])
-                    U_hatC = U_hatC.at[i, j+n].set(x_LB[j])
+                if B[i, j] >= 0:
+                    L_hatB = L_hatB.at[i, j].set(x_LB[j])
+                    U_hatB = U_hatB.at[i, j].set(x_UB[j])
+                else:
+                    L_hatB = L_hatB.at[i, j].set(x_UB[j])
+                    U_hatB = U_hatB.at[i, j].set(x_LB[j])
 
-        C = np.asarray(C)
-        L_hatC = np.asarray(L_hatC)
-        U_hatC = np.asarray(U_hatC)
+        A = np.asarray(A)
+        B = np.asarray(B)
+        L_hatA = np.asarray(L_hatA)
+        U_hatA = np.asarray(U_hatA)
+        L_hatB = np.asarray(L_hatB)
+        U_hatB = np.asarray(U_hatB)
 
         def ideal_form_callback(m, where):
             if where == gp.GRB.Callback.MIPNODE: # and gp.GRB.Callback.MIPNODE_STATUS == gp.GRB.OPTIMAL:
@@ -167,66 +172,71 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                     xval = m.cbGetNodeRel(x)
                     wval = m.cbGetNodeRel(w)
 
-                    for j in triangle_idx:  # only need to consider those where we cant deduce w beforehand
-                        d = jnp.concatenate([zval[K-1], xval])
-                        wj = wval[K, j]
-                        lhs = jnp.multiply(C[j], d)
-                        rhs = jnp.multiply(C[j], L_hatC[j] * (1-wj) + U_hatC[j] * wj)
-                        Ihat = jnp.where(lhs < rhs)[0]
-                        Ihat_comp = jnp.where(lhs >= rhs)[0]
+                    for j in triangle_idx:
+                        # IhatA = jnp.array(range(5))
+                        # IhatA_comp = jnp.array(range(5, 10))
+                        # IhatB = jnp.array(range(5))
+                        # IhatB_comp = jnp.array(range(5, 10))
 
-                        sum_Ihat = jnp.sum(jnp.multiply(C[j], d - L_hatC[j] * (1-wj))[Ihat])
-                        sum_Ihat_comp = jnp.sum(jnp.multiply(C[j], U_hatC[j] * wj)[Ihat_comp])
+                        lhsA = jnp.multiply(A[j], zval[K-1])
+                        rhsA = jnp.multiply(A[j], L_hatA[j] * (1 - wval[K, j]) + U_hatA[j] * wval[K, j])
 
-                        sum_rhs = sum_Ihat + sum_Ihat_comp
+                        idxA = jnp.where(lhsA < rhsA)
+                        idxA_comp = jnp.where(lhsA >= rhsA)
 
-                        if zval[K, j] > sum_rhs:
-                            # zx_var_stack = gp.hstack([zval[K-1, xval]])
-                            # really have to hack this since hstack only exists in gurobi 11 which cluster does not have (yet)
-                            new_cons = 0
+                        lhsB = jnp.multiply(B[j], xval)
+                        rhsB = jnp.multiply(B[j], L_hatB[j] * (1 - wval[K, j]) + U_hatB[j] * wval[K, j])
+                        idxB = jnp.where(lhsB < rhsB)
+                        idxB_comp = jnp.where(lhsB >= rhsB)
 
-                            for idx in Ihat:
-                                if idx < n:
-                                    new_cons += A[j, idx] * (z[K-1, idx] - L_hatC[j, idx] * (1 - w[K, j]))
-                                else:
-                                    new_cons += B[j, idx-n] * (x[idx-n] - L_hatC[j, idx] * (1 - w[K, j]))
-                            for idx in Ihat_comp:
-                                if idx < n:
-                                    new_cons += A[j, idx] * U_hatC[j, idx] * w[K, j]
-                                else:
-                                    new_cons += B[j, idx-n] * U_hatC[j, idx] * w[K, j]
-                            m.cbLazy(z[K, j].item() <= new_cons.item())
+                        IhatA = idxA[0]
+                        IhatA_comp = idxA_comp[0]
+                        IhatB = idxB[0]
+                        IhatB_comp = idxB_comp[0]
 
-        model._callback = ideal_form_callback
-        model.optimize(model._callback)
+                        wvar = w[K, j]
+                        new_cons = 0
+                        for idx in IhatA:
+                            new_cons += A[j, idx] * (z[K-1, idx] - L_hatA[j, idx] * (1 - wvar))
+                        for idx in IhatA_comp:
+                            new_cons += A[j, idx] * U_hatA[j, idx] * wvar
+                        for idx in IhatB:
+                            new_cons += B[j, idx] * (x[idx] - L_hatB[j, idx] * (1 - wvar))
+                        for idx in IhatB_comp:
+                            new_cons += B[j, idx] * U_hatB[j, idx] * wvar
 
-    # if cfg.callback:
+                        m.cbLazy(z[K, j].item() <= new_cons.item())
+
+    # if cfg.callback and K == 3:
     #     model.Params.lazyConstraints = 1
+    #     triangle_idx = []  # these are the indices that we actually need to bound
+    #     for i in range(n):
+    #         if y_UB[K, i] > 0.00001 and y_LB[K, i] < 0.00001:
+    #             triangle_idx.append(i)
+    #     # log.info(triangle_idx)
+    #     C = jnp.hstack([A, B])
+    #     L_hatC = jnp.zeros((n, 2*n))
+    #     U_hatC = jnp.zeros((n, 2*n))
 
-    #     L_hatA = jnp.zeros((n, n))
-    #     U_hatA = jnp.zeros((n, n))
     #     for i in range(n):
     #         for j in range(n):
-    #             if A[i, j] >= 0:
-    #                 L_hatA = L_hatA.at[i, j].set(z_LB[K-1, j])
-    #                 U_hatA = U_hatA.at[i, j].set(z_UB[K-1, j])
-    #             else:
-    #                 L_hatA = L_hatA.at[i, j].set(z_UB[K-1, j])
-    #                 U_hatA = U_hatA.at[i, j].set(z_LB[K-1, j])
+    #             if C[i, j] >= 0:
+    #                 L_hatC = L_hatC.at[i, j].set(z_LB[K-1, j])
+    #                 L_hatC = L_hatC.at[i, j+n].set(x_LB[j])
 
-    #     # TODO look at how to vectorize this, it certainly *should* be possible easily
-    #     L_hatB = jnp.zeros((n, n))
-    #     U_hatB = jnp.zeros((n, n))
-    #     for i in range(n):
-    #         for j in range(n):
-    #             if B[i, j] >= 0:
-    #                 L_hatB = L_hatB.at[i, j].set(x_LB[j])
-    #                 U_hatB = U_hatB.at[i, j].set(x_UB[j])
+    #                 U_hatC = U_hatC.at[i, j].set(z_UB[K-1, j])
+    #                 U_hatC = U_hatC.at[i, j+n].set(x_UB[j])
     #             else:
-    #                 L_hatB = L_hatB.at[i, j].set(x_UB[j])
-    #                 U_hatB = U_hatB.at[i, j].set(x_LB[j])
+    #                 L_hatC = L_hatC.at[i, j].set(z_UB[K-1, j])
+    #                 L_hatC = L_hatC.at[i, j+n].set(x_UB[j])
 
-    #     # TODO: rewrite this by combining Az + Bx to not have to deal with two pieces
+    #                 U_hatC = U_hatC.at[i, j].set(z_LB[K-1, j])
+    #                 U_hatC = U_hatC.at[i, j+n].set(x_LB[j])
+
+    #     C = np.asarray(C)
+    #     L_hatC = np.asarray(L_hatC)
+    #     U_hatC = np.asarray(U_hatC)
+
     #     def ideal_form_callback(m, where):
     #         if where == gp.GRB.Callback.MIPNODE: # and gp.GRB.Callback.MIPNODE_STATUS == gp.GRB.OPTIMAL:
     #             status = model.cbGet(gp.GRB.Callback.MIPNODE_STATUS)
@@ -234,66 +244,59 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
     #                 zval = m.cbGetNodeRel(z)
     #                 xval = m.cbGetNodeRel(x)
     #                 wval = m.cbGetNodeRel(w)
-    #                 # log.info(zval)
-    #                 # log.info(xval)
-    #                 # log.info(wval)
 
-    #                 # first, just do the bounds at K+1 and see if should do for earlier iterates as well
-    #                 for i in range(n):
-    #                     a = A[i]
-    #                     b = B[i]
+    #                 for j in triangle_idx[1: 2]:  # only need to consider those where we cant deduce w beforehand
+    #                     d = jnp.concatenate([zval[K-1], xval])
+    #                     wj = wval[K, j]
+    #                     lhs = jnp.multiply(C[j], d)
+    #                     rhs = jnp.multiply(C[j], L_hatC[j] * (1-wj) + U_hatC[j] * wj)
+    #                     Ihat = jnp.where(lhs < rhs)[0]
+    #                     Ihat_comp = jnp.where(lhs >= rhs)[0]
 
-    #                     # check condition to compute IhatA
-    #                     lhs = jnp.multiply(a, zval[K-1])
-    #                     rhs = jnp.multiply(a, L_hatA @ (1 - wval[K-1]) + U_hatA @ wval[K - 1])
+    #                     log.info(Ihat)
+    #                     log.info(Ihat_comp)
 
-    #                     IhatA = jnp.where(lhs < rhs)
-    #                     IhatA_comp = jnp.where(lhs >= rhs)
+    #                     sum_Ihat = jnp.sum(jnp.multiply(C[j], d - L_hatC[j] * (1-wj))[Ihat])
+    #                     sum_Ihat_comp = jnp.sum(jnp.multiply(C[j], U_hatC[j] * wj)[Ihat_comp])
 
-    #                     # same for IhatB
-    #                     lhs = jnp.multiply(b, xval)
-    #                     rhs = jnp.multiply(b, L_hatB @ (1 - wval[K-1]) + U_hatB @ wval[K - 1])
+    #                     sum_rhs = sum_Ihat + sum_Ihat_comp
 
-    #                     IhatB = jnp.where(lhs < rhs)
-    #                     IhatB_comp = jnp.where(lhs >= rhs)
+    #                     log.info(zval[K, j])
+    #                     log.info(sum_rhs)
+    #                     # exit(0)
 
-    #                     rhs_A = jnp.multiply(a, zval[K-1] - L_hatA @ (1 - wval[K-1]))
-    #                     rhs_A = jnp.sum(rhs_A[IhatA])
-
-    #                     rhs_A_comp = jnp.multiply(b, U_hatA @ wval[K-1])
-    #                     rhs_A_comp = jnp.sum(rhs_A_comp[IhatA_comp])
-
-    #                     rhs_B = jnp.multiply(b, xval - L_hatB @ (1 - wval[K-1]))
-    #                     rhs_B = jnp.sum(rhs_B[IhatB])
-
-    #                     rhs_B_comp = jnp.multiply(b, U_hatB @ wval[K-1])
-    #                     rhs_B_comp = jnp.sum(rhs_B_comp[IhatB_comp])
-
-
-    #                     if zval[K, i] > rhs_A + rhs_A_comp + rhs_B + rhs_B_comp:
+    #                     if zval[K, j] > sum_rhs:
+    #                         # zx_var_stack = gp.hstack([zval[K-1, xval]])
+    #                         # really have to hack this since hstack only exists in gurobi 11 which cluster does not have (yet)
     #                         new_cons = 0
-    #                         cons_A = z[K-1] - np.asarray(L_hatA) @ (1 - w[K-1])
-    #                         cons_A_comp = np.asarray(U_hatA) @ w[K-1]
 
-    #                         cons_B = x - np.asarray(L_hatB) @ (1 - w[K-1])
-    #                         cons_B_comp = np.asarray(U_hatB) @ w[K-1]
-    #                         for idx in IhatA[0]:
-    #                             new_cons = a[idx] * cons_A[idx]
-    #                         for idx in IhatA_comp[0]:
-    #                             new_cons += a[idx] * cons_A_comp[idx]
+    #                         for idx in Ihat:
+    #                             if idx < n:
+    #                                 new_cons += A[j, idx] * (z[K-1, idx] - L_hatC[j, idx] * (1 - w[K, j]))
+    #                             else:
+    #                                 new_cons += B[j, idx-n] * (x[idx-n] - L_hatC[j, idx] * (1 - w[K, j]))
+    #                         for idx in Ihat_comp:
+    #                             if idx < n:
+    #                                 new_cons += A[j, idx] * U_hatC[j, idx] * w[K, j]
+    #                             else:
+    #                                 new_cons += B[j, idx-n] * U_hatC[j, idx] * w[K, j]
+    #                         m.cbLazy(z[K, j].item() <= new_cons.item())
 
-    #                         for idx in IhatB[0]:
-    #                             new_cons += b[idx] * cons_B[idx]
-    #                         for idx in IhatB_comp[0]:
-    #                             new_cons += b[idx] * cons_B_comp[idx]
+        model._callback = ideal_form_callback
 
-    #     model._callback = ideal_form_callback
-    #     model.optimize(model._callback)
+        start = time.time()
+        model.optimize(model._callback)
+        manual_time = time.time() - start
 
     model.update()
     model.optimize()
 
-    return model.objVal, model.Runtime, z.X, x.X
+    if cfg.callback:
+        outtime = manual_time
+    else:
+        outtime = model.Runtime
+
+    return model.objVal, outtime, z.X, x.X
 
 def BoundTightY(K, A, B, t, cfg, basic=False):
     n = cfg.n
