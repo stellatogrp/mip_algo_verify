@@ -173,10 +173,13 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                     wval = m.cbGetNodeRel(w)
 
                     for j in triangle_idx:
-                        # IhatA = jnp.array(range(5))
-                        # IhatA_comp = jnp.array(range(5, 10))
-                        # IhatB = jnp.array(range(5))
-                        # IhatB_comp = jnp.array(range(5, 10))
+                        # IhatA = jnp.array(range(10))
+                        # IhatA_comp = jnp.array(range(10, 20))
+                        # IhatB = jnp.array(range(10))
+                        # IhatB_comp = jnp.array(range(10, 20))
+
+                        if jnp.abs(wval[K, j] - 0.5) >= 0.49:
+                            continue
 
                         lhsA = jnp.multiply(A[j], zval[K-1])
                         rhsA = jnp.multiply(A[j], L_hatA[j] * (1 - wval[K, j]) + U_hatA[j] * wval[K, j])
@@ -188,6 +191,15 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                         rhsB = jnp.multiply(B[j], L_hatB[j] * (1 - wval[K, j]) + U_hatB[j] * wval[K, j])
                         idxB = jnp.where(lhsB < rhsB)
                         idxB_comp = jnp.where(lhsB >= rhsB)
+
+                        yA = jnp.multiply(A[j], zval[K-1] - L_hatA[j] * (1-wval[K, j]))[idxA]
+                        yAcomp = jnp.multiply(A[j], U_hatA[j] * wval[K, j])[idxA_comp]
+                        yB = jnp.multiply(B[j], xval - L_hatB[j] * (1-wval[K, j]))[idxB]
+                        yBcomp = jnp.multiply(B[j], U_hatB[j] * wval[K, j])[idxB_comp]
+
+                        yrhs = jnp.sum(yA) + jnp.sum(yAcomp) + jnp.sum(yB) + jnp.sum(yBcomp)
+                        if zval[K, j] <= yrhs:
+                            continue
 
                         IhatA = idxA[0]
                         IhatA_comp = idxA_comp[0]
@@ -456,13 +468,14 @@ def NNQP_run(cfg):
     A = jnp.eye(cfg.n) - t * P
     B = -t * jnp.eye(cfg.n)
     K_max = cfg.K_max
+    K_min = cfg.K_min
 
     y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=cfg.basic_bounding)
 
     Deltas = []
     solvetimes = []
     zbar_twostep, ybar, xbar_twostep = None, None, None
-    for k in range(1, K_max + 1):
+    for k in range(K_min, K_max + 1):
         log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_twostep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
         delta_k, solvetime, zbar_twostep, ybar, xbar_twostep = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
                                                                  y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
@@ -478,7 +491,7 @@ def NNQP_run(cfg):
     Deltas_onestep = []
     solvetimes_onestep = []
     zbar, ybar, xbar = None, None, None
-    for k in range(1, K_max + 1):
+    for k in range(K_min, K_max + 1):
         log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_onestep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
         delta_k, solvetime, zbar, xbar = VerifyPGD_withBounds_onestep(k, A, B, t, cfg, Deltas_onestep,
                                                                  y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
