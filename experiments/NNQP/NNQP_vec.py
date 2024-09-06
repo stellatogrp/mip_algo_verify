@@ -92,7 +92,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
     w = model.addMVar(var_shape, vtype=gp.GRB.BINARY)
 
     for k in range(K):
-        ykplus1 = np.asarray(A) @ z[k] + np.asarray(B) @ x
+        ykplus1 = np.asarray(A) @ z[k] + np.asarray(B) @ x  # look to pass sparse scipy matrices
         for i in range(n):
             if y_UB[k+1, i] < -0.00001:
                 model.addConstr(z[k+1, i] == 0)
@@ -173,12 +173,8 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                     wval = m.cbGetNodeRel(w)
 
                     for j in triangle_idx:
-                        # IhatA = jnp.array(range(10))
-                        # IhatA_comp = jnp.array(range(10, 20))
-                        # IhatB = jnp.array(range(10))
-                        # IhatB_comp = jnp.array(range(10, 20))
 
-                        if jnp.abs(wval[K, j] - 0.5) >= 0.49:
+                        if jnp.abs(wval[K, j] - 0.5) >= 0.499:
                             continue
 
                         lhsA = jnp.multiply(A[j], zval[K-1])
@@ -218,81 +214,6 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                             new_cons += B[j, idx] * U_hatB[j, idx] * wvar
 
                         m.cbLazy(z[K, j].item() <= new_cons.item())
-
-    # if cfg.callback and K == 3:
-    #     model.Params.lazyConstraints = 1
-    #     triangle_idx = []  # these are the indices that we actually need to bound
-    #     for i in range(n):
-    #         if y_UB[K, i] > 0.00001 and y_LB[K, i] < 0.00001:
-    #             triangle_idx.append(i)
-    #     # log.info(triangle_idx)
-    #     C = jnp.hstack([A, B])
-    #     L_hatC = jnp.zeros((n, 2*n))
-    #     U_hatC = jnp.zeros((n, 2*n))
-
-    #     for i in range(n):
-    #         for j in range(n):
-    #             if C[i, j] >= 0:
-    #                 L_hatC = L_hatC.at[i, j].set(z_LB[K-1, j])
-    #                 L_hatC = L_hatC.at[i, j+n].set(x_LB[j])
-
-    #                 U_hatC = U_hatC.at[i, j].set(z_UB[K-1, j])
-    #                 U_hatC = U_hatC.at[i, j+n].set(x_UB[j])
-    #             else:
-    #                 L_hatC = L_hatC.at[i, j].set(z_UB[K-1, j])
-    #                 L_hatC = L_hatC.at[i, j+n].set(x_UB[j])
-
-    #                 U_hatC = U_hatC.at[i, j].set(z_LB[K-1, j])
-    #                 U_hatC = U_hatC.at[i, j+n].set(x_LB[j])
-
-    #     C = np.asarray(C)
-    #     L_hatC = np.asarray(L_hatC)
-    #     U_hatC = np.asarray(U_hatC)
-
-    #     def ideal_form_callback(m, where):
-    #         if where == gp.GRB.Callback.MIPNODE: # and gp.GRB.Callback.MIPNODE_STATUS == gp.GRB.OPTIMAL:
-    #             status = model.cbGet(gp.GRB.Callback.MIPNODE_STATUS)
-    #             if status == gp.GRB.OPTIMAL:
-    #                 zval = m.cbGetNodeRel(z)
-    #                 xval = m.cbGetNodeRel(x)
-    #                 wval = m.cbGetNodeRel(w)
-
-    #                 for j in triangle_idx[1: 2]:  # only need to consider those where we cant deduce w beforehand
-    #                     d = jnp.concatenate([zval[K-1], xval])
-    #                     wj = wval[K, j]
-    #                     lhs = jnp.multiply(C[j], d)
-    #                     rhs = jnp.multiply(C[j], L_hatC[j] * (1-wj) + U_hatC[j] * wj)
-    #                     Ihat = jnp.where(lhs < rhs)[0]
-    #                     Ihat_comp = jnp.where(lhs >= rhs)[0]
-
-    #                     log.info(Ihat)
-    #                     log.info(Ihat_comp)
-
-    #                     sum_Ihat = jnp.sum(jnp.multiply(C[j], d - L_hatC[j] * (1-wj))[Ihat])
-    #                     sum_Ihat_comp = jnp.sum(jnp.multiply(C[j], U_hatC[j] * wj)[Ihat_comp])
-
-    #                     sum_rhs = sum_Ihat + sum_Ihat_comp
-
-    #                     log.info(zval[K, j])
-    #                     log.info(sum_rhs)
-    #                     # exit(0)
-
-    #                     if zval[K, j] > sum_rhs:
-    #                         # zx_var_stack = gp.hstack([zval[K-1, xval]])
-    #                         # really have to hack this since hstack only exists in gurobi 11 which cluster does not have (yet)
-    #                         new_cons = 0
-
-    #                         for idx in Ihat:
-    #                             if idx < n:
-    #                                 new_cons += A[j, idx] * (z[K-1, idx] - L_hatC[j, idx] * (1 - w[K, j]))
-    #                             else:
-    #                                 new_cons += B[j, idx-n] * (x[idx-n] - L_hatC[j, idx] * (1 - w[K, j]))
-    #                         for idx in Ihat_comp:
-    #                             if idx < n:
-    #                                 new_cons += A[j, idx] * U_hatC[j, idx] * w[K, j]
-    #                             else:
-    #                                 new_cons += B[j, idx-n] * U_hatC[j, idx] * w[K, j]
-    #                         m.cbLazy(z[K, j].item() <= new_cons.item())
 
         model._callback = ideal_form_callback
 
