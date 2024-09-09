@@ -132,37 +132,42 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
 
     if cfg.callback:
         model.Params.lazyConstraints = 1
-        triangle_idx = []
-        for j in range(n):
-            if y_UB[K, j] > 0.00001 and y_LB[K, j] < 0.00001:
-                triangle_idx.append(j)
-        L_hatA = jnp.zeros((n, n))
-        U_hatA = jnp.zeros((n, n))
-        L_hatB = jnp.zeros((n, n))
-        U_hatB = jnp.zeros((n, n))
-
-        for i in range(n):
+        triangle_idx = {}
+        for k in range(1, K+1):
+            curr_tri_idx = []
             for j in range(n):
-                if A[i, j] >= 0:
-                    L_hatA = L_hatA.at[i, j].set(z_LB[K-1, j])
-                    U_hatA = U_hatA.at[i, j].set(z_UB[K-1, j])
-                else:
-                    L_hatA = L_hatA.at[i, j].set(z_UB[K-1, j])
-                    U_hatA = U_hatA.at[i, j].set(z_LB[K-1, j])
+                if y_UB[k, j] > 0.00001 and y_LB[k, j] < -0.00001:
+                    curr_tri_idx.append(j)
+            triangle_idx[k] = curr_tri_idx
+        log.info(triangle_idx)
+        L_hatA = jnp.zeros((K+1, n, n))
+        U_hatA = jnp.zeros((K+1, n, n))
+        L_hatB = jnp.zeros((K+1, n, n))
+        U_hatB = jnp.zeros((K+1, n, n))
 
-                if B[i, j] >= 0:
-                    L_hatB = L_hatB.at[i, j].set(x_LB[j])
-                    U_hatB = U_hatB.at[i, j].set(x_UB[j])
-                else:
-                    L_hatB = L_hatB.at[i, j].set(x_UB[j])
-                    U_hatB = U_hatB.at[i, j].set(x_LB[j])
+        for k in range(1, K+1):  # TODO: figure out how to vectorize this
+            for i in range(n):  # i is the output indices of a relu
+                for j in range(n):  # j in the input indices of a relu
+                    if A[i, j] >= 0:
+                        L_hatA = L_hatA.at[k, i, j].set(z_LB[k-1, j])
+                        U_hatA = U_hatA.at[k, i, j].set(z_UB[k-1, j])
+                    else:
+                        L_hatA = L_hatA.at[k, i, j].set(z_UB[k-1, j])
+                        U_hatA = U_hatA.at[k, i, j].set(z_LB[k-1, j])
+
+                    if B[i, j] >= 0:
+                        L_hatB = L_hatB.at[k, i, j].set(x_LB[j])
+                        U_hatB = U_hatB.at[k, i, j].set(x_UB[j])
+                    else:
+                        L_hatB = L_hatB.at[k, i, j].set(x_UB[j])
+                        U_hatB = U_hatB.at[k, i, j].set(x_LB[j])
 
         A = np.asarray(A)
         B = np.asarray(B)
-        L_hatA = np.asarray(L_hatA)
-        U_hatA = np.asarray(U_hatA)
-        L_hatB = np.asarray(L_hatB)
-        U_hatB = np.asarray(U_hatB)
+        allL_hatA = np.asarray(L_hatA)
+        allU_hatA = np.asarray(U_hatA)
+        allL_hatB = np.asarray(L_hatB)
+        allU_hatB = np.asarray(U_hatB)
 
         def ideal_form_callback(m, where):
             if where == gp.GRB.Callback.MIPNODE: # and gp.GRB.Callback.MIPNODE_STATUS == gp.GRB.OPTIMAL:
@@ -172,48 +177,55 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                     xval = m.cbGetNodeRel(x)
                     wval = m.cbGetNodeRel(w)
 
-                    for j in triangle_idx:
+                    # TODO: figure out the best K to use the output for
+                    for k in range(max(1, K-1), K+1):
+                        triangle_idxk = triangle_idx[k]
+                        L_hatA = allL_hatA[k] # TODO: rename these so as to not be confusing
+                        U_hatA = allU_hatA[k]
+                        L_hatB = allL_hatB[k]
+                        U_hatB = allU_hatB[k]
+                        for j in triangle_idxk:
 
-                        if jnp.abs(wval[K, j] - 0.5) >= 0.499:
-                            continue
+                            if jnp.abs(wval[k, j] - 0.5) >= 0.499:
+                                continue
 
-                        lhsA = jnp.multiply(A[j], zval[K-1])
-                        rhsA = jnp.multiply(A[j], L_hatA[j] * (1 - wval[K, j]) + U_hatA[j] * wval[K, j])
+                            lhsA = jnp.multiply(A[j], zval[k-1])
+                            rhsA = jnp.multiply(A[j], L_hatA[j] * (1 - wval[k, j]) + U_hatA[j] * wval[k, j])
 
-                        idxA = jnp.where(lhsA < rhsA)
-                        idxA_comp = jnp.where(lhsA >= rhsA)
+                            idxA = jnp.where(lhsA < rhsA)
+                            idxA_comp = jnp.where(lhsA >= rhsA)
 
-                        lhsB = jnp.multiply(B[j], xval)
-                        rhsB = jnp.multiply(B[j], L_hatB[j] * (1 - wval[K, j]) + U_hatB[j] * wval[K, j])
-                        idxB = jnp.where(lhsB < rhsB)
-                        idxB_comp = jnp.where(lhsB >= rhsB)
+                            lhsB = jnp.multiply(B[j], xval)
+                            rhsB = jnp.multiply(B[j], L_hatB[j] * (1 - wval[k, j]) + U_hatB[j] * wval[k, j])
+                            idxB = jnp.where(lhsB < rhsB)
+                            idxB_comp = jnp.where(lhsB >= rhsB)
 
-                        yA = jnp.multiply(A[j], zval[K-1] - L_hatA[j] * (1-wval[K, j]))[idxA]
-                        yAcomp = jnp.multiply(A[j], U_hatA[j] * wval[K, j])[idxA_comp]
-                        yB = jnp.multiply(B[j], xval - L_hatB[j] * (1-wval[K, j]))[idxB]
-                        yBcomp = jnp.multiply(B[j], U_hatB[j] * wval[K, j])[idxB_comp]
+                            yA = jnp.multiply(A[j], zval[k-1] - L_hatA[j] * (1-wval[k, j]))[idxA]
+                            yAcomp = jnp.multiply(A[j], U_hatA[j] * wval[k, j])[idxA_comp]
+                            yB = jnp.multiply(B[j], xval - L_hatB[j] * (1-wval[k, j]))[idxB]
+                            yBcomp = jnp.multiply(B[j], U_hatB[j] * wval[k, j])[idxB_comp]
 
-                        yrhs = jnp.sum(yA) + jnp.sum(yAcomp) + jnp.sum(yB) + jnp.sum(yBcomp)
-                        if zval[K, j] <= yrhs:
-                            continue
+                            yrhs = jnp.sum(yA) + jnp.sum(yAcomp) + jnp.sum(yB) + jnp.sum(yBcomp)
+                            if zval[k, j] <= yrhs:
+                                continue
 
-                        IhatA = idxA[0]
-                        IhatA_comp = idxA_comp[0]
-                        IhatB = idxB[0]
-                        IhatB_comp = idxB_comp[0]
+                            IhatA = idxA[0]
+                            IhatA_comp = idxA_comp[0]
+                            IhatB = idxB[0]
+                            IhatB_comp = idxB_comp[0]
 
-                        wvar = w[K, j]
-                        new_cons = 0
-                        for idx in IhatA:
-                            new_cons += A[j, idx] * (z[K-1, idx] - L_hatA[j, idx] * (1 - wvar))
-                        for idx in IhatA_comp:
-                            new_cons += A[j, idx] * U_hatA[j, idx] * wvar
-                        for idx in IhatB:
-                            new_cons += B[j, idx] * (x[idx] - L_hatB[j, idx] * (1 - wvar))
-                        for idx in IhatB_comp:
-                            new_cons += B[j, idx] * U_hatB[j, idx] * wvar
+                            wvar = w[k, j]
+                            new_cons = 0
+                            for idx in IhatA:
+                                new_cons += A[j, idx] * (z[k-1, idx] - L_hatA[j, idx] * (1 - wvar))
+                            for idx in IhatA_comp:
+                                new_cons += A[j, idx] * U_hatA[j, idx] * wvar
+                            for idx in IhatB:
+                                new_cons += B[j, idx] * (x[idx] - L_hatB[j, idx] * (1 - wvar))
+                            for idx in IhatB_comp:
+                                new_cons += B[j, idx] * U_hatB[j, idx] * wvar
 
-                        m.cbLazy(z[K, j].item() <= new_cons.item())
+                            m.cbLazy(z[k, j].item() <= new_cons.item())
 
         model._callback = ideal_form_callback
 
@@ -224,6 +236,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
     model.update()
     model.optimize()
 
+    # manual_time = 0  # TODO remember to remove this once debugging is done in all K callbacks
     if cfg.callback:
         outtime = manual_time
     else:
