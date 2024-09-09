@@ -50,7 +50,7 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
         y[:K-1].Start = ybar[:K-1]
         x.Start = xbar
 
-    if pnorm == 1:
+    if pnorm == 1 or pnorm == 'inf':
         U = z_UB[K] - z_LB[K-1]
         L = z_LB[K] - z_UB[K-1]
 
@@ -70,7 +70,19 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
                 model.addConstr(up[i] <= U[i]*v[i])
                 model.addConstr(un[i] <= jnp.abs(L[i])*(1 - v[i]))
 
-        model.setObjective(gp.quicksum(up + un), gp.GRB.MAXIMIZE)
+        if pnorm == 1:
+            model.setObjective(cfg.obj_scaling * gp.quicksum(up + un), gp.GRB.MAXIMIZE)
+        elif pnorm == 'inf':
+            M = jnp.maximum(jnp.abs(U), jnp.abs(L))
+            q = model.addVar(ub=jnp.max(M))
+            gamma = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+            for i in range(n):
+                Mi = jnp.abs(U[i]) + jnp.abs(L[i])
+                model.addConstr(q >= up[i] + un[i] - Mi * (1 - gamma[i]))
+                model.addConstr(q <= up[i] + un[i] + jnp.max(M) * (1 - gamma[i]))
+            model.addConstr(gp.quicksum(gamma) == 1)
+            model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
     model.update()
     model.optimize()
@@ -108,7 +120,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
         z[:K-1].Start = zbar[:K-1]
         x.Start = xbar
 
-    if pnorm == 1:
+    if pnorm == 1 or pnorm == 'inf':
         U = z_UB[K] - z_LB[K-1]
         L = z_LB[K] - z_UB[K-1]
 
@@ -125,10 +137,22 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                 model.addConstr(up[i] == 0)
             else: # Li < 0 < Ui
                 model.addConstr(up[i] - un[i] == z[K, i] - z[K-1, i])
-                model.addConstr(up[i] <= U[i]*v[i])
+                model.addConstr(up[i] <= jnp.abs(U[i])*v[i])
                 model.addConstr(un[i] <= jnp.abs(L[i])*(1 - v[i]))
 
-        model.setObjective(gp.quicksum(up + un), gp.GRB.MAXIMIZE)
+        if pnorm == 1:
+            model.setObjective(cfg.obj_scaling * gp.quicksum(up + un), gp.GRB.MAXIMIZE)
+        elif pnorm == 'inf':
+            M = jnp.maximum(jnp.abs(U), jnp.abs(L))
+            q = model.addVar(ub=jnp.max(M))
+            gamma = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+            for i in range(n):
+                Mi = jnp.abs(U[i]) + jnp.abs(L[i])
+                model.addConstr(q >= up[i] + un[i] - Mi * (1 - gamma[i]))
+                model.addConstr(q <= up[i] + un[i] + jnp.max(M) * (1 - gamma[i]))
+            model.addConstr(gp.quicksum(gamma) == 1)
+            model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
     if cfg.callback:
         model.Params.lazyConstraints = 1
@@ -442,6 +466,9 @@ def NNQP_run(cfg):
     log.info(f'one step deltas: {Deltas_onestep}')
     log.info(f'two step times: {solvetimes}')
     log.info(f'one step times: {solvetimes_onestep}')
+
+    log.info(f'infty norm: {jnp.max(jnp.abs(zbar[K_max] - zbar[K_max - 1]))}')
+    log.info(zbar[K_max] - zbar[K_max - 1])
 
     # xbar_vec = jnp.zeros(cfg.n)
     # for i in range(cfg.n):
