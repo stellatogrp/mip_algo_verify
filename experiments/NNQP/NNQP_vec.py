@@ -155,7 +155,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
             model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
     if cfg.callback:
-        model.Params.lazyConstraints = 1
+        model.Params.lazyConstraints = 1  # TODO: lazyConstraints -> PreCrush and cbLazy -> cbCut
         triangle_idx = {}
         for k in range(1, K+1):
             curr_tri_idx = []
@@ -201,6 +201,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                     xval = m.cbGetNodeRel(x)
                     wval = m.cbGetNodeRel(w)
 
+                    # TODO: can jit the inside of this (probably)
                     # TODO: figure out the best K to use the output for
                     for k in range(max(1, K-1), K+1):
                         triangle_idxk = triangle_idx[k]

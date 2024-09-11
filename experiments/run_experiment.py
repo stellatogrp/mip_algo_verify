@@ -2,6 +2,8 @@ import logging
 import sys
 
 import hydra
+
+import LP.LP as LP
 import NNQP.NNQP as NNQP
 import NNQP.NNQP_vec as NNQP_vec
 
@@ -18,12 +20,19 @@ def main_experiment_nnqp(cfg):
         NNQP.run(cfg)
 
 
+@hydra.main(version_base='1.2', config_path='configs/LP', config_name='lp_experiment.yaml')
+def main_experiment_lp(cfg):
+    LP.run(cfg)
+
+
 base_dir_map = {
+    'LP': 'LP/outputs',
     'NNQP': 'NNQP/outputs',
 }
 
 
 func_driver_map = {
+    'LP': main_experiment_lp,
     'NNQP': main_experiment_nnqp,
 }
 

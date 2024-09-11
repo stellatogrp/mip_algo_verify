@@ -20,7 +20,7 @@ basic_bounding: False  # True = basic interval prop only, False = LP based bound
 K_min: 1
 K_max: 2
 pnorm: 'inf'
-obj_scaling: 1
+obj_scaling: 1000
 
 vec: True
 callback: True

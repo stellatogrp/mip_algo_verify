@@ -24,7 +24,8 @@ class RandomLP(object):
         self.c = jax.random.uniform(subkey, shape=(self.n,))
 
         self.key, subkey = jax.random.split(self.key)
-        self.b = jax.random.normal(subkey, shape=(self.m,))
+        # self.b = jax.random.normal(subkey, shape=(self.m,))
+        self.b = jax.random.uniform(subkey, shape=(self.m, ))
 
     def test_with_cvxpy(self):
         x = cp.Variable(self.n)
@@ -49,7 +50,7 @@ class RandomLP(object):
             xkplus1 = jax.nn.relu(xk - t * (c - A.T @ yk))
             ykplus1 = yk - t * (A @ (2 * xkplus1 - xk) - b)
 
-            print(jnp.linalg.norm(ykplus1 - yk, 1) + jnp.linalg.norm(xkplus1 - xk, 1))
+            # print(jnp.linalg.norm(ykplus1 - yk, 1) + jnp.linalg.norm(xkplus1 - xk, 1))
 
             xk = xkplus1
             yk = ykplus1

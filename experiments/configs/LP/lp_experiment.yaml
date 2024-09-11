@@ -1,0 +1,24 @@
+m: 5
+n: 10
+rng_seed: 0
+stepsize: .1
+
+u0:
+  type: 'zero'
+
+v0:
+  type: 'zero'
+
+x:
+  type: 'box'
+  l: 0
+  u: 1
+
+basic_bounding: False  # True = basic interval prop only, False = LP based bounding
+
+K_min: 1
+K_max: 2
+pnorm: 1
+obj_scaling: 1
+
+callback: True

@@ -38,5 +38,5 @@ def main_bounds():
 
 
 if __name__ == '__main__':
-    # main()
-    main_bounds()
+    main()
+    # main_bounds()
