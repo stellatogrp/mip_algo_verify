@@ -2,7 +2,6 @@ import logging
 import sys
 
 import hydra
-
 import LP.LP as LP
 import NNQP.NNQP as NNQP
 import NNQP.NNQP_vec as NNQP_vec
