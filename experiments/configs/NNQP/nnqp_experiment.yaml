@@ -1,4 +1,4 @@
-n: 10
+n: 20
 mu: 1
 L: 10
 num_zero_eigvals: 0
@@ -19,8 +19,10 @@ basic_bounding: False  # True = basic interval prop only, False = LP based bound
 
 K_min: 1
 K_max: 2
-pnorm: 'inf'
-obj_scaling: 1000
+pnorm: 1
+obj_scaling: 1
 
 vec: True
 callback: True
+jax_callback: True
+num_top_cuts: 5

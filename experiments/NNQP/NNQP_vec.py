@@ -5,6 +5,7 @@ import gurobipy as gp
 import jax
 import jax.numpy as jnp
 import numpy as np
+import scipy.sparse as spa
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
@@ -90,6 +91,9 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
     return model.objVal, model.Runtime, z.X, y.X, x.X
 
 
+# def
+
+
 def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                                  y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
                                  zbar, ybar, xbar):
@@ -104,7 +108,8 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
     w = model.addMVar(var_shape, vtype=gp.GRB.BINARY)
 
     for k in range(K):
-        ykplus1 = np.asarray(A) @ z[k] + np.asarray(B) @ x  # look to pass sparse scipy matrices
+        # ykplus1 = np.asarray(A) @ z[k] + np.asarray(B) @ x  # look to pass sparse scipy matrices
+        ykplus1 = spa.csc_matrix(A) @ z[k] + spa.csc_matrix(B) @ x
         for i in range(n):
             if y_UB[k+1, i] < -0.00001:
                 model.addConstr(z[k+1, i] == 0)
@@ -154,8 +159,68 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
             model.addConstr(gp.quicksum(gamma) == 1)
             model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
-    if cfg.callback:
-        model.Params.lazyConstraints = 1  # TODO: lazyConstraints -> PreCrush and cbLazy -> cbCut
+    if cfg.jax_callback and K == 2:  # TODO remember to remove the K condition once done testing
+        model.Params.PreCrush = 1
+        triangle_idx = {}
+        for k in range(1, K+1):
+            curr_tri_idx = []
+            for j in range(n):
+                if y_UB[k, j] > 0.00001 and y_LB[k, j] < -0.00001:
+                    curr_tri_idx.append(j)
+            triangle_idx[k] = curr_tri_idx
+        log.info(triangle_idx)
+
+        L_hatA = jnp.zeros((K+1, n, n))
+        U_hatA = jnp.zeros((K+1, n, n))
+        L_hatB = jnp.zeros((K+1, n, n))
+        U_hatB = jnp.zeros((K+1, n, n))
+
+        A_nonneg = jnp.where(A >= 0)
+        A_neg = jnp.where(A < 0)
+        B_nonneg = jnp.where(B >= 0)
+        B_neg = jnp.where(B < 0)
+
+        for k in range(1, K+1):
+            L_hatA_k = L_hatA[k]
+            L_hatA_k = L_hatA_k.at[A_nonneg].set(z_LB[k-1][A_nonneg[1]])
+            L_hatA_k = L_hatA_k.at[A_neg].set(z_UB[k-1][A_neg[1]])
+            L_hatA = L_hatA.at[k].set(L_hatA_k)
+
+            U_hatA_k = U_hatA[k]
+            U_hatA_k = U_hatA_k.at[A_nonneg].set(z_UB[k-1][A_nonneg[1]])
+            U_hatA_k = U_hatA_k.at[A_neg].set(z_LB[k-1][A_neg[1]])
+            U_hatA = U_hatA.at[k].set(U_hatA_k)
+
+            L_hatB_k = L_hatB[k]
+            L_hatB_k = L_hatB_k.at[B_nonneg].set(x_LB[B_nonneg[1]])
+            L_hatB_k = L_hatB_k.at[B_neg].set(x_UB[B_neg[1]])
+            L_hatB = L_hatB.at[k].set(L_hatB_k)
+
+            U_hatB_k = U_hatB[k]
+            U_hatB_k = U_hatB_k.at[B_nonneg].set(x_UB[B_nonneg[1]])
+            U_hatB_k = U_hatB_k.at[B_neg].set(x_LB[B_neg[1]])
+            U_hatB = U_hatB.at[k].set(U_hatB_k)
+
+        def ideal_form_callback(m, where):
+            # if where == gp.GRB.Callback.MIPNODE: # and gp.GRB.Callback.MIPNODE_STATUS == gp.GRB.OPTIMAL:
+            if where == gp.GRB.Callback.MIPNODE and model.cbGet(gp.GRB.Callback.MIPNODE_STATUS) == gp.GRB.OPTIMAL:
+                # zval = m.cbGetNodeRel(z)
+                # xval = m.cbGetNodeRel(x)
+                # wval = m.cbGetNodeRel(w)
+
+                # log.info(wval)
+                exit(0)
+
+        model._callback = ideal_form_callback
+
+        start = time.time()
+        model.optimize(model._callback)
+        manual_time = time.time() - start
+
+
+    elif cfg.callback:
+        # model.Params.lazyConstraints = 1  # TODO: lazyConstraints -> PreCrush and cbLazy -> cbCut
+        model.Params.PreCrush = 1
         triangle_idx = {}
         for k in range(1, K+1):
             curr_tri_idx = []
@@ -250,7 +315,8 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                             for idx in IhatB_comp:
                                 new_cons += B[j, idx] * U_hatB[j, idx] * wvar
 
-                            m.cbLazy(z[k, j].item() <= new_cons.item())
+                            # m.cbLazy(z[k, j].item() <= new_cons.item())
+                            m.cbCut(z[k, j].item() <= new_cons.item())
 
         model._callback = ideal_form_callback
 
@@ -258,11 +324,12 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
         model.optimize(model._callback)
         manual_time = time.time() - start
 
-    model.update()
-    model.optimize()
+    else:
+        model.update()
+        model.optimize()
 
     # manual_time = 0  # TODO remember to remove this once debugging is done in all K callbacks
-    if cfg.callback:
+    if cfg.callback or cfg.jax_callback:
         outtime = manual_time
     else:
         outtime = model.Runtime
@@ -468,8 +535,8 @@ def NNQP_run(cfg):
     log.info(f'two step times: {solvetimes}')
     log.info(f'one step times: {solvetimes_onestep}')
 
-    log.info(f'infty norm: {jnp.max(jnp.abs(zbar[K_max] - zbar[K_max - 1]))}')
-    log.info(zbar[K_max] - zbar[K_max - 1])
+    # log.info(f'infty norm: {jnp.max(jnp.abs(zbar[K_max] - zbar[K_max - 1]))}')
+    # log.info(zbar[K_max] - zbar[K_max - 1])
 
     # xbar_vec = jnp.zeros(cfg.n)
     # for i in range(cfg.n):
