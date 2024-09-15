@@ -49,4 +49,4 @@ def test_vec_LU_hat():
         U_hatA_vec[k][A_nonneg] = UB[k-1][A_nonneg[1]]
         U_hatA_vec[k][A_neg] = LB[k-1][A_neg[1]]
 
-    return np.allclose(L_hatA, L_hatA_vec) and np.allclose(U_hatA, U_hatA_vec)
+    assert np.allclose(L_hatA, L_hatA_vec) and np.allclose(U_hatA, U_hatA_vec)

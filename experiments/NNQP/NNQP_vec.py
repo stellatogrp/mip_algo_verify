@@ -159,7 +159,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
             model.addConstr(gp.quicksum(gamma) == 1)
             model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
-    if cfg.jax_callback and K == 2:  # TODO remember to remove the K condition once done testing
+    if cfg.jax_callback and K == 3:  # TODO remember to remove the K condition once done testing
         model.Params.PreCrush = 1
         triangle_idx = {}
         for k in range(1, K+1):
@@ -204,11 +204,18 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
         def ideal_form_callback(m, where):
             # if where == gp.GRB.Callback.MIPNODE: # and gp.GRB.Callback.MIPNODE_STATUS == gp.GRB.OPTIMAL:
             if where == gp.GRB.Callback.MIPNODE and model.cbGet(gp.GRB.Callback.MIPNODE_STATUS) == gp.GRB.OPTIMAL:
+                wval = m.cbGetNodeRel(w)
+                # if every binary var is already 0/1, then cant cut anything so might as well exit the callback early
+                if jnp.all(jnp.abs(wval - 0.5) >= cfg.binary_tol):
+                    return
+
+                nonintegral_idx = jnp.where(jnp.abs(wval - 0.5) < cfg.binary_tol)
+                log.info(wval)
+                log.info(nonintegral_idx)
+
                 # zval = m.cbGetNodeRel(z)
                 # xval = m.cbGetNodeRel(x)
-                # wval = m.cbGetNodeRel(w)
 
-                # log.info(wval)
                 exit(0)
 
         model._callback = ideal_form_callback

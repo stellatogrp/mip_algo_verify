@@ -18,7 +18,7 @@ x:
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 2
+K_max: 3
 pnorm: 1
 obj_scaling: 1
 
@@ -26,3 +26,4 @@ vec: True
 callback: True
 jax_callback: True
 num_top_cuts: 5
+binary_tol: 0.4999  # check if abs(x - 0.5) >= binary_tol to see if x is already 0/1
