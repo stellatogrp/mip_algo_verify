@@ -1,0 +1,21 @@
+n: 20
+mu: 1
+L: 10
+num_zero_eigvals: 0
+P_rng_seed: 10
+stepsize:
+  type: 'rel' # 'rel' -> t = h / L, 'opt' -> t = 2/(mu + L), 'abs': t = h
+  h: 1.5
+
+z0:
+  type: 'zero'
+
+x:
+  type: 'box'
+  l: -15
+  u: -10
+
+K_min: 1
+K_max: 5
+pnorm: 1
+obj_scaling: 1

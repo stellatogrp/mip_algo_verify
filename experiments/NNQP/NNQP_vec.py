@@ -4,13 +4,22 @@ import time
 import gurobipy as gp
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scipy.sparse as spa
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
 jax.config.update("jax_enable_x64", True)
 log = logging.getLogger(__name__)
+
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    # "font.sans-serif": ["Helvetica Neue"],
+    "font.size": 20,
+    "figure.figsize": (9, 6)})
 
 
 def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
@@ -551,6 +560,56 @@ def PGD_single(t, z, A, B, x):
     return y, z
 
 
+def jax_PGD(A, B, z0, x, K_max, pnorm=1):
+    resids = jnp.zeros(K_max+1)
+
+    if pnorm == 'inf':
+        def body_fun(i, val):
+            zk, resids = val
+            znew = jax.nn.relu(A @ zk + B @ x)
+            resids = resids.at[i].set(jnp.max(jnp.abs(znew - zk)))
+            return (znew, resids)
+    else:
+        def body_fun(i, val):
+            zk, resids = val
+            znew = jax.nn.relu(A @ zk + B @ x)
+            resids = resids.at[i].set(jnp.linalg.norm(znew - zk, ord=pnorm))
+            return (znew, resids)
+
+    zK, resids = jax.lax.fori_loop(1, K_max+1, body_fun, (z0, resids))
+    return resids
+
+
+def samples(cfg, A, B):
+    sample_idx = jnp.arange(cfg.samples.N)
+
+    def z_sample(i):
+    # if cfg.z0.type == 'zero':
+        # return jnp.zeros(n)
+        return jnp.zeros(cfg.n)
+
+    def x_sample(i):
+        key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
+        # TODO add the if, start with box case only
+        return jax.random.uniform(key, shape=(cfg.n,), minval=cfg.x.l, maxval=cfg.x.u)
+
+    z_samples = jax.vmap(z_sample)(sample_idx)
+    x_samples = jax.vmap(x_sample)(sample_idx)
+
+    def pgd_resids(i):
+        return jax_PGD(A, B, z_samples[i], x_samples[i], cfg.K_max, pnorm=cfg.pnorm)
+
+    sample_resids = jax.vmap(pgd_resids)(sample_idx)
+    log.info(sample_resids)
+    max_sample_resids = jnp.max(sample_resids, axis=0)
+    log.info(max_sample_resids)
+
+    df = pd.DataFrame(sample_resids[:, 1:])  # remove the first column of zeros
+    df.to_csv(cfg.samples.out_fname, index=False, header=False)
+
+    return max_sample_resids[1:]
+
+
 def NNQP_run(cfg):
     log.info(cfg)
     P = generate_P(cfg)
@@ -566,6 +625,8 @@ def NNQP_run(cfg):
     B = -t * jnp.eye(cfg.n)
     K_max = cfg.K_max
     K_min = cfg.K_min
+
+    max_sample_resids = samples(cfg, A, B)
 
     y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=cfg.basic_bounding)
 
@@ -584,6 +645,21 @@ def NNQP_run(cfg):
         solvetimes.append(solvetime)
         log.info(Deltas)
         log.info(solvetimes)
+
+    fig, ax = plt.subplots()
+    ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+    ax.set_xlabel(r'$K$')
+    ax.set_ylabel('Fixed-point residual')
+    ax.set_yscale('log')
+    ax.set_title(r'NNQP VP, $n=20$')
+
+    ax.legend()
+
+    plt.savefig('resids.pdf')
+    plt.clf()
+    plt.cla()
 
     Deltas_onestep = []
     solvetimes_onestep = []
@@ -605,6 +681,7 @@ def NNQP_run(cfg):
     log.info(f'one step deltas: {Deltas_onestep}')
     log.info(f'two step times: {solvetimes}')
     log.info(f'one step times: {solvetimes_onestep}')
+    log.info(f'max sample resids: {max_sample_resids}')
 
     # log.info(f'infty norm: {jnp.max(jnp.abs(zbar[K_max] - zbar[K_max - 1]))}')
     # log.info(zbar[K_max] - zbar[K_max - 1])
@@ -614,6 +691,20 @@ def NNQP_run(cfg):
     #     xbar_vec = xbar_vec.at[i].set(xbar[i])
 
     # PGD(t, P, xbar_vec, K_max)
+
+    fig, ax = plt.subplots()
+    ax.plot(range(1, len(solvetimes)+1), solvetimes, label='two step times')
+    # ax.plot(range(1, len(solvetimes_onestep)+1), solvetimes_onestep, label='one step times')
+    ax.plot(range(1, len(solvetimes_onestep)+1), solvetimes_onestep, label='one step + callback times')
+
+    ax.set_xlabel(r'$K$')
+    ax.set_ylabel('Solvetime(s)')
+    ax.set_yscale('log')
+    ax.set_title(r'NNQP VP, $n=20$')
+
+    ax.legend()
+
+    plt.savefig('times.pdf')
 
 
 def run(cfg):
