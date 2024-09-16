@@ -1,0 +1,65 @@
+import cvxpy as cp
+import numpy as np
+
+
+def test_pdhg_convergence():
+    np.random.seed(1)
+    m = 5
+    n = 10
+    K = 10000
+    t = .1
+
+    A = np.random.normal(size=(m, n))
+    c = np.random.uniform(size=n)
+    b = np.random.uniform(size=m)
+
+    x = cp.Variable(n)
+
+    constraints = [A @ x == b, x >= 0]
+    prob = cp.Problem(cp.Minimize(c @ x), constraints)
+    res = prob.solve()
+    # print('--testing with cvxpy--')
+    print('obj:', res)
+    # print('x value:', x.value)
+    # print('y value:', constraints[0].dual_value)
+    cp_x = x.value
+    cp_y = constraints[0].dual_value
+
+    xk = np.zeros(n)
+    yk = np.zeros(m)
+
+    print('--testing with vanilla pdhg--')
+    for _ in range(K):
+        xkplus1 = np.maximum(xk - t * (c - A.T @ yk), 0)
+        ykplus1 = yk - t * (A @ (2 * xkplus1 - xk) - b)
+
+        # print(jnp.linalg.norm(ykplus1 - yk, 1) + jnp.linalg.norm(xkplus1 - xk, 1))
+
+        xk = xkplus1
+        yk = ykplus1
+
+    print(cp_x)
+    print(xk)
+    print(np.linalg.norm(xk - cp_x))
+
+    assert np.linalg.norm(xk - cp_x) <= 1e-2  # need to be pretty loose here
+
+    assert np.linalg.norm(yk - cp_y) <= 1e-2 or np.linalg.norm(yk + cp_y) <= 1e-2 # dual var can be flipped from alg
+
+    # testing momentum
+    xk = np.zeros(n)
+    yk = np.zeros(m)
+    # vk = xk
+    # specific momentum from https://arxiv.org/pdf/2403.11139 with Nesterov weights
+    for k in range(K):
+        xkplus1 = np.maximum(xk - t * (c - A.T @ yk), 0)
+        vkplus1 = xkplus1 + k / (k + 3) * (xkplus1 - xk)
+        ykplus1 = yk - t * (A @ (2 * vkplus1 - xk) - b)
+
+        xk = xkplus1
+        # vk = vkplus1
+        yk = ykplus1
+
+    assert np.linalg.norm(xk - cp_x) <= 1e-2  # need to be pretty loose here
+
+    assert np.linalg.norm(yk - cp_y) <= 1e-2 or np.linalg.norm(yk + cp_y) <= 1e-2 # dual var can be flipped from alg

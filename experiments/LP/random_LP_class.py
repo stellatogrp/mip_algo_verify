@@ -59,13 +59,38 @@ class RandomLP(object):
         print('xvalue:', xk)
         print('yvalue:', yk)
 
+    def test_with_pdhg_momentum(self, t=.1, K=10):
+        c, A, b = self.c, self.A, self.b
+        m, n = self.m, self.n
+
+        xk = jnp.zeros(n)
+        yk = jnp.zeros(m)
+
+        # vk = xk
+        print('--testing with pdhg plus momentum--')
+        # specific momentum from https://arxiv.org/pdf/2403.11139 with Nesterov weights
+        for k in range(K):
+            xkplus1 = jax.nn.relu(xk - t * (c - A.T @ yk))
+            vkplus1 = xkplus1 + k / (k + 3) * (xkplus1 - xk)
+            ykplus1 = yk - t * (A @ (2 * vkplus1 - xk) - b)
+
+            xk = xkplus1
+            # vk = vkplus1
+            yk = ykplus1
+
+        print('obj:', c @ xk)
+        print('xvalue:', xk)
+        print('yvalue:', yk)
+
 
 def main():
     m = 5
     n = 10
+    K = 100
     instance = RandomLP(m, n)
     instance.test_with_cvxpy()
-    instance.test_with_pdhg(K=20)
+    instance.test_with_pdhg(K=K)
+    instance.test_with_pdhg_momentum(K=K)
 
 
 if __name__ == '__main__':
