@@ -91,7 +91,38 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
     return model.objVal, model.Runtime, z.X, y.X, x.X
 
 
-# def
+def computeI_Icomp(x, a, w, Lhat, Uhat):
+    # lhsA = jnp.multiply(A[j], zval[k-1])
+    # rhsA = jnp.multiply(A[j], L_hatA[j] * (1 - wval[k, j]) + U_hatA[j] * wval[k, j])
+    lhs = jnp.multiply(a, x)
+    rhs = jnp.multiply(a, Lhat * (1 - w) + Uhat * w)
+    # idxA = jnp.where(lhsA < rhsA)
+    # idxA_comp = jnp.where(lhsA >= rhsA)
+    idx = jnp.where(lhs < rhs)
+    idx_comp = jnp.where(lhs >= rhs)
+    return idx, idx_comp
+
+
+@jax.jit
+def violation_metric(y, w, a, z, b, x, LhatA, UhatA, LhatB, UhatB):
+    lhsA = jnp.multiply(a, z)
+    rhsA = jnp.multiply(a, LhatA * (1 - w) + UhatA * w)
+    lhsB = jnp.multiply(b, x)
+    rhsB = jnp.multiply(b, LhatB * (1 - w) + UhatB * w)
+
+    idxA = lhsA < rhsA
+    idxAcomp = lhsA >= rhsA
+
+    idxB = lhsB < rhsB
+    idxBcomp = lhsB >= rhsB
+
+    yA = jnp.where(idxA, jnp.multiply(a, z - LhatA * (1-w)), 0).sum()
+    yAcomp = jnp.where(idxAcomp, jnp.multiply(a, UhatA * w), 0).sum()
+    yB = jnp.where(idxB, jnp.multiply(b, x - UhatB * (1-w)), 0).sum()
+    yBcomp = jnp.where(idxBcomp, jnp.multiply(b, UhatB * w), 0).sum()
+
+    # return y - (yA + yAcomp + yB + yBcomp)
+    return jnp.maximum(y - (yA + yAcomp + yB + yBcomp), 0)
 
 
 def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
@@ -159,16 +190,9 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
             model.addConstr(gp.quicksum(gamma) == 1)
             model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
-    if cfg.jax_callback and K == 3:  # TODO remember to remove the K condition once done testing
+    if cfg.jax_callback:
+        # model.Params.lazyConstraints = 1
         model.Params.PreCrush = 1
-        triangle_idx = {}
-        for k in range(1, K+1):
-            curr_tri_idx = []
-            for j in range(n):
-                if y_UB[k, j] > 0.00001 and y_LB[k, j] < -0.00001:
-                    curr_tri_idx.append(j)
-            triangle_idx[k] = curr_tri_idx
-        log.info(triangle_idx)
 
         L_hatA = jnp.zeros((K+1, n, n))
         U_hatA = jnp.zeros((K+1, n, n))
@@ -204,19 +228,59 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
         def ideal_form_callback(m, where):
             # if where == gp.GRB.Callback.MIPNODE: # and gp.GRB.Callback.MIPNODE_STATUS == gp.GRB.OPTIMAL:
             if where == gp.GRB.Callback.MIPNODE and model.cbGet(gp.GRB.Callback.MIPNODE_STATUS) == gp.GRB.OPTIMAL:
-                wval = m.cbGetNodeRel(w)
+                wval = jnp.asarray(m.cbGetNodeRel(w))
                 # if every binary var is already 0/1, then cant cut anything so might as well exit the callback early
                 if jnp.all(jnp.abs(wval - 0.5) >= cfg.binary_tol):
                     return
 
                 nonintegral_idx = jnp.where(jnp.abs(wval - 0.5) < cfg.binary_tol)
-                log.info(wval)
-                log.info(nonintegral_idx)
+                # log.info(nonintegral_idx)
 
-                # zval = m.cbGetNodeRel(z)
-                # xval = m.cbGetNodeRel(x)
+                zval = jnp.asarray(m.cbGetNodeRel(z))
+                xval = jnp.asarray(m.cbGetNodeRel(x))
 
-                exit(0)
+                map_idx = jnp.arange(jnp.size(nonintegral_idx[0]))
+                # log.info(map_idx)
+
+                def violation_mapper(i):
+                    k = nonintegral_idx[0][i]
+                    j = nonintegral_idx[1][i]
+                    return violation_metric(zval[k, j], wval[k, j], A[j], zval[k-1], B[j], xval,
+                                            L_hatA[k, j], U_hatA[k, j], L_hatB[k, j], U_hatB[k, j])
+
+                violations = jax.vmap(violation_mapper)(map_idx)
+                # log.info(violations)
+
+                if jnp.size(map_idx) <= cfg.num_top_cuts:
+                    filter_idx = map_idx
+                else:
+                    _, filter_idx = jax.lax.top_k(violations, cfg.num_top_cuts)
+
+                # log.info(filter_idx)
+                for idx in filter_idx:
+                    if violations[idx] <= 0.00001:
+                        continue
+                    k = nonintegral_idx[0][idx]
+                    j = nonintegral_idx[1][idx]
+                    wvar = w[k, j]
+                    IhatA, IhatA_comp = computeI_Icomp(zval[k-1], A[j], wval[k, j], L_hatA[k, j], U_hatA[k, j])
+                    IhatB, IhatB_comp = computeI_Icomp(xval, B[j], wval[k, j], L_hatB[k, j], U_hatB[k, j])
+                    # log.info(IhatA)
+                    # log.info(IhatA_comp)
+                    # log.info(IhatB)
+                    # log.info(IhatB_comp)
+                    new_cons = 0
+                    # new_cons += gp.quicksum(np.asarray(A[j][IhatA]) * (z[k-1] - np.asarray(L_hatA[k, j]) * (1-wvar))[IhatA])
+                    for idx in IhatA[0]:
+                        new_cons += A[j, idx] * (z[k-1, idx] - L_hatA[k, j, idx] * (1 - wvar))
+                    for idx in IhatA_comp[0]:
+                        new_cons += A[j, idx] * U_hatA[k, j, idx] * wvar
+                    for idx in IhatB[0]:
+                        new_cons += B[j, idx] * (x[idx] - L_hatB[k, j, idx] * (1 - wvar))
+                    for idx in IhatB_comp[0]:
+                        new_cons += B[j, idx] * U_hatB[k, j, idx] * wvar
+                    m.cbCut(z[k, j].item() <= new_cons.item())
+                    # m.cbLazy(z[k, j].item() <= new_cons.item())
 
         model._callback = ideal_form_callback
 
@@ -235,7 +299,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                 if y_UB[k, j] > 0.00001 and y_LB[k, j] < -0.00001:
                     curr_tri_idx.append(j)
             triangle_idx[k] = curr_tri_idx
-        log.info(triangle_idx)
+        # log.info(triangle_idx)
         L_hatA = jnp.zeros((K+1, n, n))
         U_hatA = jnp.zeros((K+1, n, n))
         L_hatB = jnp.zeros((K+1, n, n))
