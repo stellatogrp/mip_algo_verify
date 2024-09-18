@@ -130,6 +130,8 @@ def violation_metric(y, w, a, z, b, x, LhatA, UhatA, LhatB, UhatB):
     yB = jnp.where(idxB, jnp.multiply(b, x - UhatB * (1-w)), 0).sum()
     yBcomp = jnp.where(idxBcomp, jnp.multiply(b, UhatB * w), 0).sum()
 
+    # add safety check for nan to throw an error (Warning at least)
+
     # return y - (yA + yAcomp + yB + yBcomp)
     return jnp.maximum(y - (yA + yAcomp + yB + yBcomp), 0)
 
@@ -243,13 +245,11 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                     return
 
                 nonintegral_idx = jnp.where(jnp.abs(wval - 0.5) < cfg.binary_tol)
-                # log.info(nonintegral_idx)
 
                 zval = jnp.asarray(m.cbGetNodeRel(z))
                 xval = jnp.asarray(m.cbGetNodeRel(x))
 
                 map_idx = jnp.arange(jnp.size(nonintegral_idx[0]))
-                # log.info(map_idx)
 
                 def violation_mapper(i):
                     k = nonintegral_idx[0][i]
@@ -258,14 +258,12 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                                             L_hatA[k, j], U_hatA[k, j], L_hatB[k, j], U_hatB[k, j])
 
                 violations = jax.vmap(violation_mapper)(map_idx)
-                # log.info(violations)
 
                 if jnp.size(map_idx) <= cfg.num_top_cuts:
                     filter_idx = map_idx
                 else:
                     _, filter_idx = jax.lax.top_k(violations, cfg.num_top_cuts)
 
-                # log.info(filter_idx)
                 for idx in filter_idx:
                     if violations[idx] <= 0.00001:
                         continue
@@ -274,12 +272,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                     wvar = w[k, j]
                     IhatA, IhatA_comp = computeI_Icomp(zval[k-1], A[j], wval[k, j], L_hatA[k, j], U_hatA[k, j])
                     IhatB, IhatB_comp = computeI_Icomp(xval, B[j], wval[k, j], L_hatB[k, j], U_hatB[k, j])
-                    # log.info(IhatA)
-                    # log.info(IhatA_comp)
-                    # log.info(IhatB)
-                    # log.info(IhatB_comp)
                     new_cons = 0
-                    # new_cons += gp.quicksum(np.asarray(A[j][IhatA]) * (z[k-1] - np.asarray(L_hatA[k, j]) * (1-wvar))[IhatA])
                     for idx in IhatA[0]:
                         new_cons += A[j, idx] * (z[k-1, idx] - L_hatA[k, j, idx] * (1 - wvar))
                     for idx in IhatA_comp[0]:

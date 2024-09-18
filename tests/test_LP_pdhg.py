@@ -1,5 +1,9 @@
 import cvxpy as cp
 import numpy as np
+import scipy.sparse as spa
+
+np.set_printoptions(precision=5)  # Print few decimal places
+np.set_printoptions(suppress=True)  # Suppress scientific notation
 
 
 def test_pdhg_convergence():
@@ -46,9 +50,42 @@ def test_pdhg_convergence():
 
     assert np.linalg.norm(yk - cp_y) <= 1e-2 or np.linalg.norm(yk + cp_y) <= 1e-2 # dual var can be flipped from alg
 
+    print('----testing matrix formulation for vanilla----')
+    xk = np.zeros(n)
+    yk = np.zeros(m)
+    K = 10
+
+    uk = np.zeros(n)
+    vk = np.zeros(m)
+
+    xC = spa.eye(n)
+    xD = t * A.T
+    xE = - t * spa.eye(n)
+
+    vC = spa.eye(m)
+    vD = -2 * t * A
+    vE = t * A
+    vF = t * spa.eye(m)
+    for _ in range(K):
+        xkplus1 = np.maximum(xk - t * (c - A.T @ yk), 0)
+        ykplus1 = yk - t * (A @ (2 * xkplus1 - xk) - b)
+
+        ukplus1 = np.maximum(xC @ uk + xD @ vk + xE @ c, 0)
+        vkplus1 = vC @ vk + vD @ ukplus1 + vE @ uk + vF @ b
+        # print('x:', xkplus1)
+        # print('u:', ukplus1)
+        assert np.linalg.norm(xkplus1 - ukplus1) <= 1e-8
+        assert np.linalg.norm(ykplus1 - vkplus1) <= 1e-8
+
+        xk = xkplus1
+        yk = ykplus1
+        uk = ukplus1
+        vk = vkplus1
+
     # testing momentum
     xk = np.zeros(n)
     yk = np.zeros(m)
+    K = 10000
     # vk = xk
     # specific momentum from https://arxiv.org/pdf/2403.11139 with Nesterov weights
     for k in range(K):
