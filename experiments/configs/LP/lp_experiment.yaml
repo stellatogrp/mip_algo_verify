@@ -14,6 +14,9 @@ x:
   l: 0
   u: 1
 
+c:
+  type: 'fixed'
+
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
@@ -22,3 +25,11 @@ pnorm: 1
 obj_scaling: 1
 
 callback: True
+
+samples:
+  u_seed_offset: 100
+  v_seed_offset: 101
+  x_seed_offset: 102
+  N: 10000
+  out_fname: sample_resids.csv
+  max_out_fname: max_sample_resids.csv

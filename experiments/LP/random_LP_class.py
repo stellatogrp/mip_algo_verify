@@ -59,6 +59,26 @@ class RandomLP(object):
         print('xvalue:', xk)
         print('yvalue:', yk)
 
+
+    def test_with_jax_pdhg(self, t=.1, K=10000):
+        c, A, b = self.c, self.A, self.b
+        m, n = self.m, self.n
+
+        x0 = jnp.zeros(n)
+        y0 = jnp.zeros(m)
+
+        print('--testing with jax vanilla pdhg--')
+        def body_fun(i, val):
+            xk, yk = val
+            xkplus1 = jax.nn.relu(xk - t * (c - A.T @ yk))
+            ykplus1 = yk - t * (A @ (2 * xkplus1 - xk) - b)
+            return (xkplus1, ykplus1)
+
+        xk, yk = jax.lax.fori_loop(0, K, body_fun, (x0, y0))
+        print('obj:', c @ xk)
+        print('xvalue:', xk)
+        print('yvalue:', yk)
+
     def test_with_pdhg_momentum(self, t=.1, K=10):
         c, A, b = self.c, self.A, self.b
         m, n = self.m, self.n
@@ -90,6 +110,7 @@ def main():
     instance = RandomLP(m, n)
     instance.test_with_cvxpy()
     instance.test_with_pdhg(K=K)
+    instance.test_with_jax_pdhg(K=K)
     instance.test_with_pdhg_momentum(K=K)
 
 
