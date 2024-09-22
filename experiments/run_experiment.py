@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 import hydra
@@ -49,14 +50,27 @@ def main():
         print('specify cluster or local')
         exit(0)
 
+    # experiment = sys.argv[1]
+    target_machine = sys.argv[2]
+
     if sys.argv[1] not in base_dir_map:
         print(f'experiment name "{sys.argv[1]}" invalid')
         exit(0)
 
     base_dir = f'{base_dir}/{base_dir_map[sys.argv[1]]}'
     driver = func_driver_map[sys.argv[1]]
-    hydra_tags = [f'hydra.run.dir={base_dir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}', 'hydra.job.chdir=True']
+
+    if target_machine == 'local':
+        hydra_tags = [f'hydra.run.dir={base_dir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}', 'hydra.job.chdir=True']
+    else:
+        job_idx = int(os.environ["SLURM_ARRAY_TASK_ID"])
+        log.info(f'job id: {job_idx}')
+        hydra_tags = [f'hydra.run.dir={base_dir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}_{job_idx}', 'hydra.job.chdir=True']
     sys.argv = [sys.argv[0]] + hydra_tags
+
+    # if experiment == 'NNQP':  # can use this with the cluster environments to override vars
+    #     sys.argv.append('n=15')
+
     driver()
 
     # if sys.argv[1] == 'BoxQP':
