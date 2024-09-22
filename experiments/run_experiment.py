@@ -37,6 +37,16 @@ func_driver_map = {
 }
 
 
+NNQP_params = [
+    ['n=20', 'two_step=True', 'one_step=False'],
+    ['n=20', 'two_step=False', 'one_step=True'],
+    ['n=30', 'two_step=True', 'one_step=False'],
+    ['n=30', 'two_step=False', 'one_step=True'],
+    ['n=40', 'two_step=True', 'one_step=False'],
+    ['n=40', 'two_step=False', 'one_step=True'],
+]
+
+
 def main():
     if len(sys.argv) < 3:
         print('not enough command line arguments')
@@ -50,7 +60,7 @@ def main():
         print('specify cluster or local')
         exit(0)
 
-    # experiment = sys.argv[1]
+    experiment = sys.argv[1]
     target_machine = sys.argv[2]
 
     if sys.argv[1] not in base_dir_map:
@@ -60,12 +70,16 @@ def main():
     base_dir = f'{base_dir}/{base_dir_map[sys.argv[1]]}'
     driver = func_driver_map[sys.argv[1]]
 
-    if target_machine == 'local':
+    if target_machine == 'local' or "SLURM_ARRAY_TASK_ID" not in os.environ:
         hydra_tags = [f'hydra.run.dir={base_dir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}', 'hydra.job.chdir=True']
     else:
         job_idx = int(os.environ["SLURM_ARRAY_TASK_ID"])
         log.info(f'job id: {job_idx}')
         hydra_tags = [f'hydra.run.dir={base_dir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}_{job_idx}', 'hydra.job.chdir=True']
+        
+        if experiment == 'NNQP':
+            hydra_tags += NNQP_params[job_idx]
+    
     sys.argv = [sys.argv[0]] + hydra_tags
 
     # if experiment == 'NNQP':  # can use this with the cluster environments to override vars

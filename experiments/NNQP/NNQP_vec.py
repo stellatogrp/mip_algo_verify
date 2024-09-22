@@ -648,7 +648,7 @@ def NNQP_run(cfg):
             ax.set_xlabel(r'$K$')
             ax.set_ylabel('Fixed-point residual')
             ax.set_yscale('log')
-            ax.set_title(r'NNQP VP, $n=20$')
+            ax.set_title(rf'NNQP VP, $n={cfg.n}$')
 
             ax.legend()
 
@@ -682,7 +682,7 @@ def NNQP_run(cfg):
             ax.set_xlabel(r'$K$')
             ax.set_ylabel('Fixed-point residual')
             ax.set_yscale('log')
-            ax.set_title(r'NNQP VP, $n=20$')
+            ax.set_title(rf'NNQP VP, $n={cfg.n}$')
 
             ax.legend()
 
