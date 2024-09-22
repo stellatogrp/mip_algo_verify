@@ -53,7 +53,7 @@ def main():
         print(f'experiment name "{sys.argv[1]}" invalid')
         exit(0)
 
-    base_dir = base_dir_map[sys.argv[1]]
+    base_dir = f'{base_dir}/{base_dir_map[sys.argv[1]]}'
     driver = func_driver_map[sys.argv[1]]
     hydra_tags = [f'hydra.run.dir={base_dir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}', 'hydra.job.chdir=True']
     sys.argv = [sys.argv[0]] + hydra_tags
