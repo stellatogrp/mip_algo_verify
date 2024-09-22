@@ -97,7 +97,7 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
     model.update()
     model.optimize()
 
-    return model.objVal, model.Runtime, z.X, y.X, x.X
+    return model.objVal / cfg.obj_scaling, model.Runtime, z.X, y.X, x.X
 
 
 def computeI_Icomp(x, a, w, Lhat, Uhat):
@@ -407,7 +407,7 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
     else:
         outtime = model.Runtime
 
-    return model.objVal, outtime, z.X, x.X
+    return model.objVal / cfg.obj_scaling, outtime, z.X, x.X
 
 def BoundTightY(K, A, B, t, cfg, basic=False):
     n = cfg.n
@@ -479,16 +479,16 @@ def BoundTightY(K, A, B, t, cfg, basic=False):
                     y_UB = y_UB.at[kk, ii].set(min(y_UB[kk, ii], obj))
                     z_UB = z_UB.at[kk, ii].set(jax.nn.relu(y_UB[kk, ii]))
 
-                    model.setAttr(gp.GRB.Attr.UB, y[kk, ii].item(), y_UB[kk, ii])  # .item() is for MVar -> Var
-                    model.setAttr(gp.GRB.Attr.UB, z[kk, ii].item(), z_UB[kk, ii])
+                    # model.setAttr(gp.GRB.Attr.UB, y[kk, ii].item(), y_UB[kk, ii])  # .item() is for MVar -> Var
+                    # model.setAttr(gp.GRB.Attr.UB, z[kk, ii].item(), z_UB[kk, ii])
                 else:
                     y_LB = y_LB.at[kk, ii].set(max(y_LB[kk, ii], obj))
                     z_LB = z_LB.at[kk, ii].set(jax.nn.relu(y_LB[kk, ii]))
 
-                    model.setAttr(gp.GRB.Attr.LB, y[kk, ii].item(), y_LB[kk, ii])  # .item() is for MVar -> Var
-                    model.setAttr(gp.GRB.Attr.LB, z[kk, ii].item(), z_LB[kk, ii])
+                    # model.setAttr(gp.GRB.Attr.LB, y[kk, ii].item(), y_LB[kk, ii])  # .item() is for MVar -> Var
+                    # model.setAttr(gp.GRB.Attr.LB, z[kk, ii].item(), z_LB[kk, ii])
 
-                model.update()
+                # model.update()
 
     return y_LB, y_UB, z_LB, z_UB, x_LB, x_UB
 
@@ -620,61 +620,83 @@ def NNQP_run(cfg):
     K_min = cfg.K_min
 
     max_sample_resids = samples(cfg, A, B)
+    log.info(f'max sample resids: {max_sample_resids}')
 
     y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=cfg.basic_bounding)
 
-    Deltas = []
-    solvetimes = []
-    zbar_twostep, ybar, xbar_twostep = None, None, None
-    for k in range(K_min, K_max + 1):
-        log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_twostep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-        delta_k, solvetime, zbar_twostep, ybar, xbar_twostep = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
-                                                                 y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
-                                                                 zbar_twostep, ybar, xbar_twostep)
-        # log.info(ybar)
-        # log.info(zbar)
-        log.info(xbar_twostep)
-        Deltas.append(delta_k)
-        solvetimes.append(solvetime)
-        log.info(Deltas)
-        log.info(solvetimes)
+    if cfg.two_step:
+        Deltas = []
+        solvetimes = []
+        zbar_twostep, ybar, xbar_twostep = None, None, None
+        for k in range(K_min, K_max + 1):
+            log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_twostep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+            delta_k, solvetime, zbar_twostep, ybar, xbar_twostep = VerifyPGD_withBounds_twostep(k, A, B, t, cfg, Deltas,
+                                                                    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
+                                                                    zbar_twostep, ybar, xbar_twostep)
+            # log.info(ybar)
+            # log.info(zbar)
+            log.info(xbar_twostep)
+            Deltas.append(delta_k)
+            solvetimes.append(solvetime)
+            log.info(Deltas)
+            log.info(solvetimes)
 
-    fig, ax = plt.subplots()
-    ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
-    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+            fig, ax = plt.subplots()
+            ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+            ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
 
-    ax.set_xlabel(r'$K$')
-    ax.set_ylabel('Fixed-point residual')
-    ax.set_yscale('log')
-    ax.set_title(r'NNQP VP, $n=20$')
+            ax.set_xlabel(r'$K$')
+            ax.set_ylabel('Fixed-point residual')
+            ax.set_yscale('log')
+            ax.set_title(r'NNQP VP, $n=20$')
 
-    ax.legend()
+            ax.legend()
 
-    plt.savefig('resids.pdf')
-    plt.clf()
-    plt.cla()
+            plt.savefig('twostep_resids.pdf')
+            plt.clf()
+            plt.cla()
+        log.info(f'two step deltas: {Deltas}')
+        log.info(f'two step times: {solvetimes}')
 
-    Deltas_onestep = []
-    solvetimes_onestep = []
-    zbar, ybar, xbar = None, None, None
-    for k in range(K_min, K_max + 1):
-        log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_onestep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
-        delta_k, solvetime, zbar, xbar = VerifyPGD_withBounds_onestep(k, A, B, t, cfg, Deltas_onestep,
-                                                                 y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
-                                                                 zbar, ybar, xbar)
-        # log.info(ybar)
-        # log.info(zbar)
-        log.info(xbar)
-        Deltas_onestep.append(delta_k)
-        solvetimes_onestep.append(solvetime)
-        log.info(Deltas_onestep)
-        log.info(solvetimes_onestep)
+    if cfg.one_step:
+        Deltas_onestep = []
+        solvetimes_onestep = []
+        zbar, ybar, xbar = None, None, None
+        for k in range(K_min, K_max + 1):
+            log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPGD_withBounds_onestep, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+            delta_k, solvetime, zbar, xbar = VerifyPGD_withBounds_onestep(k, A, B, t, cfg, Deltas_onestep,
+                                                                    y_LB, y_UB, z_LB, z_UB, x_LB, x_UB,
+                                                                    zbar, ybar, xbar)
+            # log.info(ybar)
+            # log.info(zbar)
+            log.info(xbar)
+            Deltas_onestep.append(delta_k)
+            solvetimes_onestep.append(solvetime)
+            log.info(Deltas_onestep)
+            log.info(solvetimes_onestep)
 
-    log.info(f'two step deltas: {Deltas}')
-    log.info(f'one step deltas: {Deltas_onestep}')
-    log.info(f'two step times: {solvetimes}')
-    log.info(f'one step times: {solvetimes_onestep}')
-    log.info(f'max sample resids: {max_sample_resids}')
+            fig, ax = plt.subplots()
+            ax.plot(range(1, len(Deltas_onestep)+1), Deltas_onestep, label='VP')
+            ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+            ax.set_xlabel(r'$K$')
+            ax.set_ylabel('Fixed-point residual')
+            ax.set_yscale('log')
+            ax.set_title(r'NNQP VP, $n=20$')
+
+            ax.legend()
+
+            plt.savefig('onestep_resids.pdf')
+            plt.clf()
+            plt.cla()
+        log.info(f'one step deltas: {Deltas_onestep}')
+        log.info(f'one step times: {solvetimes_onestep}')
+
+    # log.info(f'two step deltas: {Deltas}')
+    # log.info(f'one step deltas: {Deltas_onestep}')
+    # log.info(f'two step times: {solvetimes}')
+    # log.info(f'one step times: {solvetimes_onestep}')
+    # log.info(f'max sample resids: {max_sample_resids}')
 
     # log.info(f'infty norm: {jnp.max(jnp.abs(zbar[K_max] - zbar[K_max - 1]))}')
     # log.info(zbar[K_max] - zbar[K_max - 1])
@@ -685,19 +707,19 @@ def NNQP_run(cfg):
 
     # PGD(t, P, xbar_vec, K_max)
 
-    fig, ax = plt.subplots()
-    ax.plot(range(1, len(solvetimes)+1), solvetimes, label='two step times')
-    # ax.plot(range(1, len(solvetimes_onestep)+1), solvetimes_onestep, label='one step times')
-    ax.plot(range(1, len(solvetimes_onestep)+1), solvetimes_onestep, label='one step + callback times')
+    # fig, ax = plt.subplots()
+    # ax.plot(range(1, len(solvetimes)+1), solvetimes, label='two step times')
+    # # ax.plot(range(1, len(solvetimes_onestep)+1), solvetimes_onestep, label='one step times')
+    # ax.plot(range(1, len(solvetimes_onestep)+1), solvetimes_onestep, label='one step + callback times')
 
-    ax.set_xlabel(r'$K$')
-    ax.set_ylabel('Solvetime(s)')
-    ax.set_yscale('log')
-    ax.set_title(r'NNQP VP, $n=20$')
+    # ax.set_xlabel(r'$K$')
+    # ax.set_ylabel('Solvetime(s)')
+    # ax.set_yscale('log')
+    # ax.set_title(r'NNQP VP, $n=20$')
 
-    ax.legend()
+    # ax.legend()
 
-    plt.savefig('times.pdf')
+    # plt.savefig('times.pdf')
 
 
 def run(cfg):

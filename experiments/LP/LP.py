@@ -131,18 +131,6 @@ def BoundTight(K, A, c, t, cfg, basic=False):
                         return None
 
                     obj = model.objVal
-                    # if sense == gp.GRB.MAXIMIZE:
-                    #     y_UB = y_UB.at[kk, ii].set(min(y_UB[kk, ii], obj))
-                    #     z_UB = z_UB.at[kk, ii].set(jax.nn.relu(y_UB[kk, ii]))
-
-                    #     model.setAttr(gp.GRB.Attr.UB, y[kk, ii].item(), y_UB[kk, ii])  # .item() is for MVar -> Var
-                    #     model.setAttr(gp.GRB.Attr.UB, z[kk, ii].item(), z_UB[kk, ii])
-                    # else:
-                    #     y_LB = y_LB.at[kk, ii].set(max(y_LB[kk, ii], obj))
-                    #     z_LB = z_LB.at[kk, ii].set(jax.nn.relu(y_LB[kk, ii]))
-
-                    #     model.setAttr(gp.GRB.Attr.LB, y[kk, ii].item(), y_LB[kk, ii])  # .item() is for MVar -> Var
-                    #     model.setAttr(gp.GRB.Attr.LB, z[kk, ii].item(), z_LB[kk, ii])
                     if target == 'u_tilde':
                         if sense == gp.GRB.MAXIMIZE:
                             utilde_UB = utilde_UB.at[kk, ii].set(min(utilde_UB[kk, ii], obj))

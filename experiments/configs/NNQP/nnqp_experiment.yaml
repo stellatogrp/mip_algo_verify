@@ -18,15 +18,17 @@ x:
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 10
+K_max: 5
 pnorm: 1
-obj_scaling: 1
+obj_scaling: 1000
 
 vec: True
 callback: False
 jax_callback: True
 num_top_cuts: 1
 binary_tol: 0.4999  # check if abs(x - 0.5) >= binary_tol to see if x is already 0/1
+two_step: True
+one_step: True
 
 samples:
   z_seed_offset: 100
