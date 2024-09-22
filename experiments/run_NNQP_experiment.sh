@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=00:20:00
-#SBATCH -o /home/vranjan/large_scale_perf_verify/code/algoverify/NNLS/runs/NNLS_%A.txt
+#SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/NNQP/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=vranjan@princeton.edu
 # #SBATCH --gres=gpu:1
