@@ -641,6 +641,13 @@ def NNQP_run(cfg):
             log.info(Deltas)
             log.info(solvetimes)
 
+            df = pd.DataFrame(Deltas)  # remove the first column of zeros
+            df.to_csv(cfg.two_step_resid_fname, index=False, header=False)
+
+            df = pd.DataFrame(solvetimes)
+            df.to_csv(cfg.two_step_time_fname, index=False, header=False)
+
+            # plotting resids so far
             fig, ax = plt.subplots()
             ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
             ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
@@ -653,8 +660,27 @@ def NNQP_run(cfg):
             ax.legend()
 
             plt.savefig('twostep_resids.pdf')
+
             plt.clf()
             plt.cla()
+
+            # plotting times so far
+
+            fig, ax = plt.subplots()
+            ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
+            # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+            ax.set_xlabel(r'$K$')
+            ax.set_ylabel('Solvetime (s)')
+            ax.set_yscale('log')
+            ax.set_title(rf'NNQP VP, $n={cfg.n}$')
+
+            ax.legend()
+
+            plt.savefig('twostep_times.pdf')
+            plt.clf()
+            plt.cla()
+
         log.info(f'two step deltas: {Deltas}')
         log.info(f'two step times: {solvetimes}')
 
@@ -675,6 +701,12 @@ def NNQP_run(cfg):
             log.info(Deltas_onestep)
             log.info(solvetimes_onestep)
 
+            df = pd.DataFrame(Deltas_onestep)  # remove the first column of zeros
+            df.to_csv(cfg.one_step_resid_fname, index=False, header=False)
+
+            df = pd.DataFrame(solvetimes_onestep)
+            df.to_csv(cfg.one_step_time_fname, index=False, header=False)
+
             fig, ax = plt.subplots()
             ax.plot(range(1, len(Deltas_onestep)+1), Deltas_onestep, label='VP')
             ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
@@ -687,6 +719,23 @@ def NNQP_run(cfg):
             ax.legend()
 
             plt.savefig('onestep_resids.pdf')
+            plt.clf()
+            plt.cla()
+
+            # plotting times so far
+
+            fig, ax = plt.subplots()
+            ax.plot(range(1, len(solvetimes_onestep)+1), solvetimes_onestep, label='VP')
+            # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+            ax.set_xlabel(r'$K$')
+            ax.set_ylabel('Solvetime (s)')
+            ax.set_yscale('log')
+            ax.set_title(rf'NNQP VP, $n={cfg.n}$')
+
+            ax.legend()
+
+            plt.savefig('onestep_times.pdf')
             plt.clf()
             plt.cla()
         log.info(f'one step deltas: {Deltas_onestep}')

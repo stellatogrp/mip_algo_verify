@@ -76,10 +76,10 @@ def main():
         job_idx = int(os.environ["SLURM_ARRAY_TASK_ID"])
         log.info(f'job id: {job_idx}')
         hydra_tags = [f'hydra.run.dir={base_dir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}_{job_idx}', 'hydra.job.chdir=True']
-        
+
         if experiment == 'NNQP':
             hydra_tags += NNQP_params[job_idx]
-    
+
     sys.argv = [sys.argv[0]] + hydra_tags
 
     # if experiment == 'NNQP':  # can use this with the cluster environments to override vars

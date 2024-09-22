@@ -18,7 +18,7 @@ x:
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 30
+K_max: 10
 pnorm: 1
 obj_scaling: 1000
 
@@ -27,8 +27,13 @@ callback: False
 jax_callback: True
 num_top_cuts: 1
 binary_tol: 0.4999  # check if abs(x - 0.5) >= binary_tol to see if x is already 0/1
-two_step: False
+two_step: True
+two_step_resid_fname: twostep_resids.csv
+two_step_time_fname: twostep_times.csv
+
 one_step: True
+one_step_resid_fname: onestep_resids.csv
+one_step_time_fname: onestep_times.csv
 
 samples:
   z_seed_offset: 100
