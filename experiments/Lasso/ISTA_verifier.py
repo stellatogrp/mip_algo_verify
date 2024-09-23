@@ -1,5 +1,5 @@
-from gurobipy import Model, GRB, quicksum
 import numpy as np
+from gurobipy import Model, GRB, quicksum, max_
 from time import perf_counter
 
 def SoftThresholding(y, lambda_t):
