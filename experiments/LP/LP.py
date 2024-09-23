@@ -59,26 +59,17 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     # xE = -t * spa.eye(n)
 
     # vC = spa.eye(m)
-    # vD = -2 * t * np_A
-    # vE = t * np_A
+    vD = -2 * t * np_A
+    vE = t * np_A
     # vF = t * spa.eye(m)
 
     for k in range(K):
-        # model.addConstr(v[k+1] == v[k] + vD @ u[k+1] + vE @ u[k] + t * x)
-        model.addConstr(v[k+1] == v[k] - t * (np_A @ (u[k+1] - u[k]) - x))
+        model.addConstr(v[k+1] == v[k] + vD @ u[k+1] + vE @ u[k] + t * x)
+        # model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
 
     for k in range(K):
         utildekplus1 = u[k] - t * (np_c - np_A.T @ v[k])
         for i in range(n):
-            # if y_UB[k+1, i] < -0.00001:
-            #     model.addConstr(z[k+1, i] == 0)
-            # elif y_LB[k+1, i] > 0.00001:
-            #     model.addConstr(z[k+1, i] == ykplus1[i])
-            # else:
-            #     model.addConstr(z[k+1, i] <= y_UB[k+1, i]/(y_UB[k+1, i] - y_LB[k+1, i]) * (ykplus1[i] - y_LB[k+1, i]))
-            #     model.addConstr(z[k+1, i] >= ykplus1[i])
-            #     model.addConstr(z[k+1, i] <= ykplus1[i] - y_LB[k+1, i] * (1 - w[k+1, i]))
-            #     model.addConstr(z[k+1, i] <= y_UB[k+1, i] * w[k+1, i])
             if utilde_UB[k+1, i] < -0.00001:
                 model.addConstr(u[k+1, i] == 0)
             elif utilde_LB[k+1, i] > 0.00001:
@@ -267,13 +258,13 @@ def BoundTight(K, A, c, t, cfg, basic=False):
                             utilde_UB = utilde_UB.at[kk, ii].set(min(utilde_UB[kk, ii], obj))
                             u_UB = u_UB.at[kk, ii].set(jax.nn.relu(utilde_UB[kk, ii]))
                         else:
-                            utilde_LB = utilde_LB.at[kk, ii].set(min(utilde_LB[kk, ii], obj))
+                            utilde_LB = utilde_LB.at[kk, ii].set(max(utilde_LB[kk, ii], obj))
                             u_LB = u_LB.at[kk, ii].set(jax.nn.relu(utilde_LB[kk, ii]))
                     else: # target == 'v'
                         if sense == gp.GRB.MAXIMIZE:
                             v_UB = v_UB.at[kk, ii].set(min(v_UB[kk, ii], obj))
                         else:
-                            v_LB = v_LB.at[kk, ii].set(min(v_LB[kk, ii], obj))
+                            v_LB = v_LB.at[kk, ii].set(max(v_LB[kk, ii], obj))
 
     log.info(jnp.all(utilde_UB - utilde_LB >= -1e-8))
     log.info(jnp.all(u_UB - u_LB >= -1e-8))
@@ -283,10 +274,18 @@ def BoundTight(K, A, c, t, cfg, basic=False):
 
 
 def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1):
+    m, n = A.shape
+    uk_all = jnp.zeros((K_max+1, n))
+    vk_all = jnp.zeros((K_max+1, m))
     resids = jnp.zeros(K_max+1)
 
-    def body_fun(i, val):
-        uk, vk, resids = val
+    uk_all = uk_all.at[0].set(u0)
+    vk_all = vk_all.at[0].set(v0)
+
+    def body_fun(k, val):
+        uk_all, vk_all, resids = val
+        uk = uk_all[k]
+        vk = vk_all[k]
         ukplus1 = jax.nn.relu(uk - t * (c - A.T @ vk))
         vkplus1 = vk - t * (A @ (2 * ukplus1 - uk) - x)
         if pnorm == 'inf':
@@ -294,11 +293,13 @@ def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1):
         elif pnorm == 1:
             resid = jnp.linalg.norm(ukplus1 - uk, ord=pnorm) + jnp.linalg.norm(vkplus1 - vk, ord=pnorm)
             # resid = jnp.linalg.norm(ukplus1 - uk, ord=pnorm)
-        resids = resids.at[i].set(resid)
-        return (ukplus1, vkplus1, resids)
+        uk_all = uk_all.at[k+1].set(ukplus1)
+        vk_all = vk_all.at[k+1].set(vkplus1)
+        resids = resids.at[k+1].set(resid)
+        return (uk_all, vk_all, resids)
 
-    _, _, resids = jax.lax.fori_loop(1, K_max+1, body_fun, (u0, v0, resids))
-    return resids
+    uk, vk, resids = jax.lax.fori_loop(0, K_max, body_fun, (uk_all, vk_all, resids))
+    return uk, vk, resids
 
 
 def interval_bound_prop(A, l, u):
@@ -335,7 +336,7 @@ def samples(cfg, A, c, t):
     def vanilla_pdhg_resids(i):
         return jax_vanilla_PDHG(A, c, t, u_samples[i], v_samples[i], x_samples[i], cfg.K_max, pnorm=cfg.pnorm)
 
-    sample_resids = jax.vmap(vanilla_pdhg_resids)(sample_idx)
+    _, _, sample_resids = jax.vmap(vanilla_pdhg_resids)(sample_idx)
     log.info(sample_resids)
     max_sample_resids = jnp.max(sample_resids, axis=0)
     log.info(max_sample_resids)
@@ -355,6 +356,22 @@ def LP_run(cfg, A, c, t):
 
     utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB = BoundTight(K_max, A, c, t, cfg, basic=cfg.basic_bounding)
 
+    # log.info('up right corner')
+    # x = cfg.x.u * jnp.ones(cfg.m)
+    # # x = jnp.array([1., 1., 0.94223])
+    # uk, vk, resids = jax_vanilla_PDHG(A, c, t, jnp.zeros(cfg.n), jnp.zeros(cfg.m), x, K_max, pnorm=cfg.pnorm)
+    # log.info(resids)
+    # log.info(uk)
+    # log.info(vk)
+
+    # log.info('u bounds:')
+    # log.info(u_LB)
+    # log.info(u_UB)
+
+    # log.info('v bounds:')
+    # log.info(v_LB)
+    # log.info(v_UB)
+
     Deltas = []
     solvetimes = []
     # zbar_twostep, ybar, xbar_twostep = None, None, None
@@ -369,16 +386,12 @@ def LP_run(cfg, A, c, t):
                                                 ubar, vbar, xbar)
 
         log.info(xbar)
+        log.info(ubar)
+        log.info(vbar)
         Deltas.append(delta_k)
         solvetimes.append(solvetime)
         log.info(Deltas)
         log.info(solvetimes)
-
-    log.info('up right corner')
-    x = cfg.x.u * jnp.ones(cfg.m)
-    # x = jnp.array([1., 1., 0.94223])
-    resids = jax_vanilla_PDHG(A, c, t, jnp.zeros(cfg.n), jnp.zeros(cfg.m), x, K_max, pnorm=cfg.pnorm)
-    log.info(resids)
 
 
 def random_LP_run(cfg):
