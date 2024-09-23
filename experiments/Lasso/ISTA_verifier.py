@@ -1,7 +1,8 @@
-from gurobipy import Model, GRB, quicksum, max_
 from time import perf_counter
 
 import numpy as np
+from gurobipy import GRB, Model, max_, quicksum
+
 
 def SoftThresholding(y, lambda_t):
     if y > lambda_t:
@@ -29,24 +30,24 @@ def BoundPreprocessing(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
 
         UB_theta[i] = sum(Bt[i, h]*(c_theta[h]+r_theta) for h in range(m) if Bt[i, h] > 0) + \
                       sum(Bt[i, h]*(c_theta[h]-r_theta) for h in range(m) if Bt[i, h] < 0)
-        
+
     for k in range(1, K):
         for i in range(n):
             y_LB[i, k]  = LB_theta[i]
             y_LB[i, k] += sum(At[i, j]*z_LB[j, k-1] for j in range(n) if At[i, j] > 0)
-            y_LB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] < 0) 
-            
-            y_UB[i, k] = UB_theta[i]
-            y_UB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] > 0) 
-            y_UB[i, k] += sum(At[i, j]*z_LB[j, k-1] for j in range(n) if At[i, j] < 0) 
+            y_LB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] < 0)
 
-            if y_LB[i, k] > y_UB[i, k]: 
+            y_UB[i, k] = UB_theta[i]
+            y_UB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] > 0)
+            y_UB[i, k] += sum(At[i, j]*z_LB[j, k-1] for j in range(n) if At[i, j] < 0)
+
+            if y_LB[i, k] > y_UB[i, k]:
                 raise ValueError('Basic Infeasible bounds y', y_LB[i, k], y_UB[i, k])
 
             # TODO: REMOVE 5.75 and use the correct Delta bounding procedure
             z_LB[i, k] = max(z_0[i] - 5.75*k, SoftThresholding(y_LB[i, k], lambda_t))
             z_UB[i, k] = min(z_0[i] + 5.75*k, SoftThresholding(y_UB[i, k], lambda_t))
-            
+
     return y_LB, y_UB, z_LB, z_UB
 
 
@@ -69,14 +70,14 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_
 
     for k in range(1, K):
         for i in range(n):
-            if y_LB[i, k] > y_UB[i, k]: 
+            if y_LB[i, k] > y_UB[i, k]:
                 raise ValueError('Infeasible bounds y', i, k, y_LB[i, k], y_UB[i, k])
-            if z_LB[i, k] > z_UB[i, k]: 
+            if z_LB[i, k] > z_UB[i, k]:
                 raise ValueError('Infeasible bounds z', i, k, z_LB[i, k], z_UB[i, k])
-            
+
             z[i, k] = model.addVar(lb=z_LB[i, k], ub=z_UB[i, k])
             y[i, k] = model.addVar(lb=y_LB[i, k], ub=y_UB[i, k])
-            
+
     theta = {}
     for h in range(m):
         theta[h] = model.addVar(lb=c_theta[h] - r_theta, ub=c_theta[h] + r_theta)
@@ -107,7 +108,7 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_
 
                 model.addConstr(z[i, k] <= z_UB[i, k]/(y_UB[i, k] + lambda_t)*(y[i, k] + lambda_t))
                 model.addConstr(z[i, k] >= z_LB[i, k]/(y_LB[i, k] - lambda_t)*(y[i, k] - lambda_t))
-            
+
             elif -lambda_t <= y_LB[i, k] <= lambda_t and y_UB[i, k] > lambda_t:
                 model.addConstr(z[i, k] >= 0)
                 model.addConstr(z[i, k] <= z_UB[i, k]/(y_UB[i, k] - y_LB[i, k])*(y[i, k] - y_LB[i, k]))
@@ -119,7 +120,7 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_
                 model.addConstr(z[i, k] <= y[i, k] + lambda_t)
             else:
                 raise RuntimeError('Unreachable code', y_LB[i, k], y_UB[i, k], lambda_t)
-        
+
     model.update()
     return model, y
 
@@ -132,7 +133,7 @@ def BoundTightY(K, At, Bt, lambda_t, z_0, c_theta, r_theta, basic=True):
 
     n = len(z_0)
 
-    for k in range(1, K):    
+    for k in range(1, K):
         model, y = BuildRelaxedModel(k+1, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_LB, z_UB)
         print('^^^^^^^^^^^^ Bound tighting, K =', k, '^^^^^^^^^^')
         for sense in [GRB.MINIMIZE, GRB.MAXIMIZE]:
@@ -146,7 +147,7 @@ def BoundTightY(K, At, Bt, lambda_t, z_0, c_theta, r_theta, basic=True):
                 if model.status != GRB.OPTIMAL:
                     print('bound tighting failes, GRB model status:', model.status)
                     return None
-                
+
                 # Update bounds
                 obj = model.objVal
                 if sense == GRB.MAXIMIZE:
@@ -157,10 +158,10 @@ def BoundTightY(K, At, Bt, lambda_t, z_0, c_theta, r_theta, basic=True):
                     y_LB[i, k] = obj
                     # TODO: REMOVE 5.75 and use the correct Delta bounding procedure
                     z_LB[i, k] = max(z_0[i] - 5.75*k, SoftThresholding(y_LB[i, k], lambda_t))
-                    
-                if y_LB[i, k] > y_UB[i, k]: 
+
+                if y_LB[i, k] > y_UB[i, k]:
                     raise ValueError('Infeasible bounds y', sense, i, k, y_LB[i, k], y_UB[i, k])
-                if z_LB[i, k] > z_UB[i, k]: 
+                if z_LB[i, k] > z_UB[i, k]:
                     raise ValueError('Infeasible bounds z', sense, i, k, z_LB[i, k], z_UB[i, k])
 
     return y_LB, y_UB, z_LB, z_UB
@@ -169,7 +170,7 @@ def BoundTightY(K, At, Bt, lambda_t, z_0, c_theta, r_theta, basic=True):
 def VerifyISTA_withBounds(K, pnorm, At, Bt, lambda_t, z_0, c_theta, r_theta, Deltas, y_LB, y_UB, z_LB, z_UB, zbar, ybar, thetabar):
     n = len(z_0)
     m = len(c_theta)
-    
+
     model = Model()
     model.Params.OutputFlag = 0
     #model.Params.NumericFocus = 3
@@ -231,7 +232,7 @@ def VerifyISTA_withBounds(K, pnorm, At, Bt, lambda_t, z_0, c_theta, r_theta, Del
     for k in range(1, K):
         for i in range(n):
             model.addConstr(y[i, k] == quicksum(At[i, j]*z[j, k-1] for j in range(n)) + quicksum(Bt[i,h]*theta[h] for h in range(m)))
-    
+
     for k in range(1, K):
         for i in range(n):
             # box-bound constraints (polyhedral relaxation of soft-thresholding)
@@ -314,9 +315,9 @@ def VerifyISTA_withBounds(K, pnorm, At, Bt, lambda_t, z_0, c_theta, r_theta, Del
             print('Bounds:', list(map(lambda x: round(x, 3), [y_LB[i, K], y_UB[i, K], z_LB[i, K], z_UB[i, K]])))
 
         return None
-    
+
     return model.objVal, {(i,k): z[i,k].X for i, k in z}, {(i,k): y[i,k].X for i, k in y}, {j: theta[j].X for j in theta}
-    
+
 
 def Generate_A_mat(m,n,seed):
     np.random.seed(seed)
@@ -327,7 +328,7 @@ def MakeData(best_t=False):
 
     lambd = 10
     t = 0.04
-    
+
     m, n = 10,15
     A = Generate_A_mat(m, n, seed)
 
@@ -337,7 +338,7 @@ def MakeData(best_t=False):
         mu = np.min(eigs)
         L = np.max(eigs)
         t = np.real(2 / (mu + L))
-    
+
     lambda_t = lambd*t
 
     At = np.eye(n) - t*(A.T @ A)
@@ -367,12 +368,12 @@ def run_ista(K_max, At, Bt, lambda_t, z_0, c_theta):
     return nn
 
 def SampleMax(Samples, K_max, At, Bt, lambda_t, z_0, c_theta):
-    max_norm = np.zeros(K_max) 
+    max_norm = np.zeros(K_max)
 
     for _ in range(Samples):
         theta_rnd = c_theta + np.random.uniform(low=-r_theta, high=r_theta, size=len(c_theta))
         max_norm = np.maximum(max_norm, run_ista(K_max, At, Bt, lambda_t, z_0, theta_rnd))
-    
+
     # Dump for PgFPlots
     for i in range(K_max):
         print('({}, {})'.format(i+1, max_norm[i]), end=' ')
