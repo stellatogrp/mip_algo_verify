@@ -1,6 +1,6 @@
-from gurobipy import Model, GRB, quicksum, max_, min_
+from gurobipy import Model, GRB, quicksum
 import numpy as np
-import matplotlib.pyplot as plt
+from time import perf_counter
 
 def SoftThresholding(y, lambda_t):
     if y > lambda_t:
@@ -39,7 +39,8 @@ def BoundPreprocessing(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
             y_UB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] > 0) 
             y_UB[i, k] += sum(At[i, j]*z_LB[j, k-1] for j in range(n) if At[i, j] < 0) 
 
-            if y_LB[i, k] > y_UB[i, k]: raise ValueError('Basic Infeasible bounds y', y_LB[i, k], y_UB[i, k])
+            if y_LB[i, k] > y_UB[i, k]: 
+                raise ValueError('Basic Infeasible bounds y', y_LB[i, k], y_UB[i, k])
 
             # TODO: REMOVE 5.75 and use the correct Delta bounding procedure
             z_LB[i, k] = max(z_0[i] - 5.75*k, SoftThresholding(y_LB[i, k], lambda_t))
@@ -67,8 +68,10 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_
 
     for k in range(1, K):
         for i in range(n):
-            if y_LB[i, k] > y_UB[i, k]: raise ValueError('Infeasible bounds y', i, k, y_LB[i, k], y_UB[i, k])
-            if z_LB[i, k] > z_UB[i, k]: raise ValueError('Infeasible bounds z', i, k, z_LB[i, k], z_UB[i, k])
+            if y_LB[i, k] > y_UB[i, k]: 
+                raise ValueError('Infeasible bounds y', i, k, y_LB[i, k], y_UB[i, k])
+            if z_LB[i, k] > z_UB[i, k]: 
+                raise ValueError('Infeasible bounds z', i, k, z_LB[i, k], z_UB[i, k])
             
             z[i, k] = model.addVar(lb=z_LB[i, k], ub=z_UB[i, k])
             y[i, k] = model.addVar(lb=y_LB[i, k], ub=y_UB[i, k])
@@ -127,7 +130,6 @@ def BoundTightY(K, At, Bt, lambda_t, z_0, c_theta, r_theta, basic=True):
         return y_LB, y_UB, z_LB, z_UB
 
     n = len(z_0)
-    m = len(c_theta)
 
     for k in range(1, K):    
         model, y = BuildRelaxedModel(k+1, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_LB, z_UB)
@@ -155,8 +157,10 @@ def BoundTightY(K, At, Bt, lambda_t, z_0, c_theta, r_theta, basic=True):
                     # TODO: REMOVE 5.75 and use the correct Delta bounding procedure
                     z_LB[i, k] = max(z_0[i] - 5.75*k, SoftThresholding(y_LB[i, k], lambda_t))
                     
-                if y_LB[i, k] > y_UB[i, k]: raise ValueError('Infeasible bounds y', sense, i, k, y_LB[i, k], y_UB[i, k])
-                if z_LB[i, k] > z_UB[i, k]: raise ValueError('Infeasible bounds z', sense, i, k, z_LB[i, k], z_UB[i, k])
+                if y_LB[i, k] > y_UB[i, k]: 
+                    raise ValueError('Infeasible bounds y', sense, i, k, y_LB[i, k], y_UB[i, k])
+                if z_LB[i, k] > z_UB[i, k]: 
+                    raise ValueError('Infeasible bounds z', sense, i, k, z_LB[i, k], z_UB[i, k])
 
     return y_LB, y_UB, z_LB, z_UB
 
@@ -290,7 +294,7 @@ def VerifyISTA_withBounds(K, pnorm, At, Bt, lambda_t, z_0, c_theta, r_theta, Del
                     model.addConstr(y[i, k] >= -lambda_t + (y_LB[i, k] + lambda_t)*w2[i, k])
 
     # Complete previous solution
-    if zbar != None:
+    if zbar is not None:
         for i, k in zbar:
             z[i, k].Start = zbar[i,k]
         for h in thetabar:
@@ -348,9 +352,6 @@ def MakeData(best_t=False):
 
     return At, Bt, lambda_t, c_z, c_theta, r_theta
 
-
-import numpy as np
-
 def run_ista(K_max, At, Bt, lambda_t, z_0, c_theta):
     # Initialize variables
     z2 = np.copy(z_0)
@@ -375,8 +376,6 @@ def SampleMax(Samples, K_max, At, Bt, lambda_t, z_0, c_theta):
     for i in range(K_max):
         print('({}, {})'.format(i+1, max_norm[i]), end=' ')
 
-
-from time import perf_counter
 if __name__ == '__main__':
     At, Bt, lambda_t, c_z, c_theta, r_theta = MakeData()
 
