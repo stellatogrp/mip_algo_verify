@@ -1,5 +1,5 @@
-m: 3
-n: 6
+m: 5
+n: 10
 rng_seed: 0
 stepsize: .1
 
@@ -11,7 +11,7 @@ v0:
 
 x:
   type: 'box'
-  l: 0
+  l: 0.5
   u: 1
 
 c:
@@ -20,11 +20,14 @@ c:
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 12
+K_max: 10
 pnorm: 1
 obj_scaling: 1
 
 callback: True
+
+vanilla_resid_fname: vanilla_resids.csv
+vanilla_time_fname: vanilla_times.csv
 
 samples:
   u_seed_offset: 100

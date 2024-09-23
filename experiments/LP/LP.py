@@ -3,6 +3,7 @@ import logging
 import gurobipy as gp
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -10,6 +11,13 @@ jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
 jax.config.update("jax_enable_x64", True)
 log = logging.getLogger(__name__)
+
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    # "font.sans-serif": ["Helvetica Neue"],
+    "font.size": 20,
+    "figure.figsize": (9, 6)})
 
 
 def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
@@ -392,6 +400,50 @@ def LP_run(cfg, A, c, t):
         solvetimes.append(solvetime)
         log.info(Deltas)
         log.info(solvetimes)
+
+        df = pd.DataFrame(Deltas)  # remove the first column of zeros
+        df.to_csv(cfg.vanilla_resid_fname, index=False, header=False)
+
+        df = pd.DataFrame(solvetimes)
+        df.to_csv(cfg.vanilla_time_fname, index=False, header=False)
+
+        # plotting resids so far
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+        ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Fixed-point residual')
+        ax.set_yscale('log')
+        ax.set_title(rf'PDHG VP, $n={cfg.n}$, $m={cfg.m}$')
+
+        ax.legend()
+
+        plt.tight_layout()
+
+        plt.savefig('vanilla_resids.pdf')
+
+        plt.clf()
+        plt.cla()
+
+        # plotting times so far
+
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
+        # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Solvetime (s)')
+        ax.set_yscale('log')
+        ax.set_title(rf'PDHG VP, $n={cfg.n}$, $m={cfg.m}$')
+
+        ax.legend()
+
+        plt.tight_layout()
+
+        plt.savefig('vanilla_times.pdf')
+        plt.clf()
+        plt.cla()
 
 
 def random_LP_run(cfg):
