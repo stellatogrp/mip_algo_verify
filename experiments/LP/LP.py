@@ -3,8 +3,6 @@ import logging
 import gurobipy as gp
 import jax
 import jax.numpy as jnp
-
-# import jax.experimental.sparse as jspa
 import numpy as np
 import pandas as pd
 
@@ -14,9 +12,142 @@ jax.config.update("jax_enable_x64", True)
 log = logging.getLogger(__name__)
 
 
+def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
+                          utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
+                          ubar, vbar, xbar):
+    n, m = cfg.n, cfg.m
+
+    model = gp.Model()
+    pnorm = cfg.pnorm
+
+    n_var_shape = (K+1, n)
+    m_var_shape = (K+1, m)
+
+    # z = model.addMVar(var_shape, lb=z_LB[:K+1], ub=z_UB[:K+1])
+    # y = model.addMVar(var_shape, lb=y_LB[:K+1], ub=y_UB[:K+1])
+    # x = model.addMVar(n, lb=x_LB, ub=x_UB)
+    # w = model.addMVar(var_shape, vtype=gp.GRB.BINARY)
+    u = model.addMVar(n_var_shape, lb=u_LB[:K+1], ub=u_UB[:K+1])
+    v = model.addMVar(m_var_shape, lb=v_LB[:K+1], ub=v_UB[:K+1])
+    x = model.addMVar(m, lb=x_LB, ub=x_UB)
+    w = model.addMVar(n_var_shape, vtype=gp.GRB.BINARY)
+
+    # xC = jnp.eye(n)
+    # xD = t * A.T
+    # xE = - t * jnp.eye(n)
+
+    # spa_xC = spa.csc_matrix(xC)
+    # spa_xD = spa.csc_matrix(xD)
+    # spa_xE = spa.csc_matrix(xE)
+    # np_A = np.asarray(A)
+
+    # vC = jnp.eye(m)
+    # vD = -2 * t * A
+    # vE = t * A
+    # vF = t * jnp.eye(m)
+
+    # spa_vC = spa.csc_matrix(vC)
+    # spa_vD = spa.csc_matrix(vD)
+    # spa_vE = spa.csc_matrix(vE)
+    # spa_vF = spa.csc_matrix(vF)
+
+    np_A = np.asarray(A)
+    np_c = np.asarray(c)
+
+    # xC = spa.eye(n)
+    # xD = t * np_A.T
+    # xE = -t * spa.eye(n)
+
+    # vC = spa.eye(m)
+    # vD = -2 * t * np_A
+    # vE = t * np_A
+    # vF = t * spa.eye(m)
+
+    for k in range(K):
+        # model.addConstr(v[k+1] == v[k] + vD @ u[k+1] + vE @ u[k] + t * x)
+        model.addConstr(v[k+1] == v[k] - t * (np_A @ (u[k+1] - u[k]) - x))
+
+    for k in range(K):
+        utildekplus1 = u[k] - t * (np_c - np_A.T @ v[k])
+        for i in range(n):
+            # if y_UB[k+1, i] < -0.00001:
+            #     model.addConstr(z[k+1, i] == 0)
+            # elif y_LB[k+1, i] > 0.00001:
+            #     model.addConstr(z[k+1, i] == ykplus1[i])
+            # else:
+            #     model.addConstr(z[k+1, i] <= y_UB[k+1, i]/(y_UB[k+1, i] - y_LB[k+1, i]) * (ykplus1[i] - y_LB[k+1, i]))
+            #     model.addConstr(z[k+1, i] >= ykplus1[i])
+            #     model.addConstr(z[k+1, i] <= ykplus1[i] - y_LB[k+1, i] * (1 - w[k+1, i]))
+            #     model.addConstr(z[k+1, i] <= y_UB[k+1, i] * w[k+1, i])
+            if utilde_UB[k+1, i] < -0.00001:
+                model.addConstr(u[k+1, i] == 0)
+            elif utilde_LB[k+1, i] > 0.00001:
+                model.addConstr(u[k+1, i] == utildekplus1[i])
+            else:
+                model.addConstr(u[k+1, i] <= utilde_UB[k+1, i]/(utilde_UB[k+1, i] - utilde_LB[k+1, i]) * (utildekplus1[i] - utilde_LB[k+1, i]))
+                model.addConstr(u[k+1, i] >= utildekplus1[i])
+                model.addConstr(u[k+1, i] <= utildekplus1[i] - utilde_LB[k+1, i] * (1 - w[k+1, i]))
+                model.addConstr(u[k+1, i] <= utilde_UB[k+1, i] * w[k+1, i])
+
+    if ubar is not None:
+        u[:K-1].Start = ubar[:K-1]
+        v[:K-1].Start = vbar[:K-1]
+        x.Start = xbar
+
+    if pnorm == 1 or pnorm == 'inf':
+        Uu = u_UB[K] - u_LB[K-1]
+        Lu = u_LB[K] - u_UB[K-1]
+
+        Uv = v_UB[K] - v_LB[K-1]
+        Lv = v_LB[K] - v_UB[K-1]
+
+        u_objp = model.addMVar(n, ub=jnp.abs(Uu))
+        u_objn = model.addMVar(n, ub=jnp.abs(Lu))
+        u_omega = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+        v_objp = model.addMVar(m, ub=jnp.abs(Uv))
+        v_objn = model.addMVar(m, ub=jnp.abs(Lv))
+        v_omega = model.addMVar(m, vtype=gp.GRB.BINARY)
+
+        for i in range(n):
+            if Lu[i] > 0.00001:
+                model.addConstr(u_objp[i] == u[K, i] - u[K-1, i])
+                model.addConstr(u_objn[i] == 0)
+            elif Uu[i] < -0.00001:
+                model.addConstr(u_objn[i] == u[K-1, i] - u[K, i])
+                model.addConstr(u_objp[i] == 0)
+            else:
+                model.addConstr(u_objp[i] - u_objn[i] == u[K, i] - u[K-1, i])
+                model.addConstr(u_objp[i] <= jnp.abs(Uu[i]) * u_omega[i])
+                model.addConstr(u_objn[i] <= jnp.abs(Lu[i]) * (1-u_omega[i]))
+
+        for i in range(m):
+            if Lv[i] > 0.00001:
+                model.addConstr(v_objp[i] == v[K, i] - v[K-1, i])
+                model.addConstr(v_objn[i] == 0)
+            elif Uv[i] < -0.00001:
+                model.addConstr(v_objn[i] == v[K-1, i] - v[K, i])
+                model.addConstr(v_objp[i] == 0)
+            else:
+                model.addConstr(v_objp[i] - v_objn[i] == v[K, i] - v[K-1, i])
+                model.addConstr(v_objp[i] <= jnp.abs(Uv[i]) * v_omega[i])
+                model.addConstr(v_objn[i] <= jnp.abs(Lv[i]) * (1-v_omega[i]))
+
+        if pnorm == 1:
+            model.setObjective(cfg.obj_scaling * (gp.quicksum(u_objp + u_objn) + gp.quicksum(v_objp + v_objn)), gp.GRB.MAXIMIZE)
+            # model.setObjective(cfg.obj_scaling * (gp.quicksum(u_objp + u_objn)), gp.GRB.MAXIMIZE)
+        elif pnorm == 'inf':
+            pass  # TODO
+
+    model.optimize()
+
+    outtime = model.Runtime
+
+    return model.objVal / cfg.obj_scaling, outtime, u.X, v.X, x.X
+
+
 def BoundTight(K, A, c, t, cfg, basic=False):
-    n = cfg.n
-    m = cfg.m
+    n, m = cfg.n, cfg.m
 
     n_var_shape = (K+1, n)
     m_var_shape = (K+1, m)
@@ -82,7 +213,7 @@ def BoundTight(K, A, c, t, cfg, basic=False):
     # log.info(v_LB)
     # log.info(v_UB)
     if basic:
-        return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB
+        return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
     target_var = ['u_tilde', 'v']
     for kk in range(1, K+1):
@@ -148,8 +279,7 @@ def BoundTight(K, A, c, t, cfg, basic=False):
     log.info(jnp.all(u_UB - u_LB >= -1e-8))
     log.info(jnp.all(v_UB - v_LB >= -1e-8))
 
-    return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB
-
+    return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
 
 def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1):
@@ -163,6 +293,7 @@ def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1):
             resid = jnp.maximum(jnp.max(jnp.abs(ukplus1 - uk)), jnp.max(jnp.abs(vkplus1 - vk)))
         elif pnorm == 1:
             resid = jnp.linalg.norm(ukplus1 - uk, ord=pnorm) + jnp.linalg.norm(vkplus1 - vk, ord=pnorm)
+            # resid = jnp.linalg.norm(ukplus1 - uk, ord=pnorm)
         resids = resids.at[i].set(resid)
         return (ukplus1, vkplus1, resids)
 
@@ -217,12 +348,37 @@ def samples(cfg, A, c, t):
 
 def LP_run(cfg, A, c, t):
     K_max = cfg.K_max
-    # K_min = cfg.K_min
+    K_min = cfg.K_min
 
     max_sample_resids = samples(cfg, A, c, t)
     log.info(max_sample_resids)
 
-    utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB = BoundTight(K_max, A, c, t, cfg, basic=cfg.basic_bounding)
+    utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB = BoundTight(K_max, A, c, t, cfg, basic=cfg.basic_bounding)
+
+    Deltas = []
+    solvetimes = []
+    # zbar_twostep, ybar, xbar_twostep = None, None, None
+    ubar, vbar, xbar = None, None, None
+    for k in range(K_min, K_max + 1):
+        log.info(f'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> VerifyPDHG_with_bounds, K={k}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+        # def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
+        #                   utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
+        #                   ubar, vbar, xbar):
+        delta_k, solvetime, ubar, vbar, xbar = VerifyPDHG_withBounds(k, A, c, t, cfg, Deltas,
+                                                utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
+                                                ubar, vbar, xbar)
+
+        log.info(xbar)
+        Deltas.append(delta_k)
+        solvetimes.append(solvetime)
+        log.info(Deltas)
+        log.info(solvetimes)
+
+    log.info('up right corner')
+    x = cfg.x.u * jnp.ones(cfg.m)
+    # x = jnp.array([1., 1., 0.94223])
+    resids = jax_vanilla_PDHG(A, c, t, jnp.zeros(cfg.n), jnp.zeros(cfg.m), x, K_max, pnorm=cfg.pnorm)
+    log.info(resids)
 
 
 def random_LP_run(cfg):
