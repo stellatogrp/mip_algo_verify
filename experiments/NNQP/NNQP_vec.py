@@ -55,10 +55,11 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
                 model.addConstr(z[k+1, i] <= y[k+1, i] - y_LB[k+1, i] * (1 - w[k+1, i]))
                 model.addConstr(z[k+1, i] <= y_UB[k+1, i] * w[k+1, i])
 
-    if zbar is not None:
-        z[:K-1].Start = zbar[:K-1]
-        y[:K-1].Start = ybar[:K-1]
-        x.Start = xbar
+    if cfg.warmstart:
+        if zbar is not None:
+            z[:K-1].Start = zbar[:K-1]
+            y[:K-1].Start = ybar[:K-1]
+            x.Start = xbar
 
     if pnorm == 1 or pnorm == 'inf':
         U = z_UB[K] - z_LB[K-1]
@@ -163,9 +164,10 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                 model.addConstr(z[k+1, i] <= ykplus1[i] - y_LB[k+1, i] * (1 - w[k+1, i]))
                 model.addConstr(z[k+1, i] <= y_UB[k+1, i] * w[k+1, i])
 
-    if zbar is not None:
-        z[:K-1].Start = zbar[:K-1]
-        x.Start = xbar
+    if cfg.warmstart:
+        if zbar is not None:
+            z[:K-1].Start = zbar[:K-1]
+            x.Start = xbar
 
     if pnorm == 1 or pnorm == 'inf':
         U = z_UB[K] - z_LB[K-1]
@@ -624,6 +626,7 @@ def NNQP_run(cfg):
 
     y_LB, y_UB, z_LB, z_UB, x_LB, x_UB = BoundTightY(K_max, A, B, t, cfg, basic=cfg.basic_bounding)
 
+    # fig, ax = plt.subplots()
     if cfg.two_step:
         Deltas = []
         solvetimes = []
@@ -663,6 +666,7 @@ def NNQP_run(cfg):
 
             plt.clf()
             plt.cla()
+            plt.close()
 
             # plotting times so far
 
@@ -680,6 +684,7 @@ def NNQP_run(cfg):
             plt.savefig('twostep_times.pdf')
             plt.clf()
             plt.cla()
+            plt.close()
 
         log.info(f'two step deltas: {Deltas}')
         log.info(f'two step times: {solvetimes}')
@@ -721,6 +726,7 @@ def NNQP_run(cfg):
             plt.savefig('onestep_resids.pdf')
             plt.clf()
             plt.cla()
+            plt.close()
 
             # plotting times so far
 
@@ -736,8 +742,11 @@ def NNQP_run(cfg):
             ax.legend()
 
             plt.savefig('onestep_times.pdf')
+
+            # plt.close()
             plt.clf()
             plt.cla()
+            plt.close()
         log.info(f'one step deltas: {Deltas_onestep}')
         log.info(f'one step times: {solvetimes_onestep}')
 

@@ -425,6 +425,7 @@ def LP_run(cfg, A, c, t):
 
         plt.clf()
         plt.cla()
+        plt.close()
 
         # plotting times so far
 
@@ -444,6 +445,7 @@ def LP_run(cfg, A, c, t):
         plt.savefig('vanilla_times.pdf')
         plt.clf()
         plt.cla()
+        plt.close()
 
 
 def random_LP_run(cfg):
