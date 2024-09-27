@@ -66,6 +66,7 @@ def test_pdhg_convergence():
     vD = -2 * t * A
     vE = t * A
     vF = t * spa.eye(m)
+
     for _ in range(K):
         xkplus1 = np.maximum(xk - t * (c - A.T @ yk), 0)
         ykplus1 = yk - t * (A @ (2 * xkplus1 - xk) - b)
@@ -85,17 +86,39 @@ def test_pdhg_convergence():
     # testing momentum
     xk = np.zeros(n)
     yk = np.zeros(m)
+
+    uk = np.zeros(n)
+    vk = np.zeros(m)
     K = 10000
+
+    def beta_func(k):
+        return k / (k + 3)
     # vk = xk
     # specific momentum from https://arxiv.org/pdf/2403.11139 with Nesterov weights
+
+    print('testing matrix formulation for momentum')
     for k in range(K):
         xkplus1 = np.maximum(xk - t * (c - A.T @ yk), 0)
-        vkplus1 = xkplus1 + k / (k + 3) * (xkplus1 - xk)
-        ykplus1 = yk - t * (A @ (2 * vkplus1 - xk) - b)
+        ytilde_kplus1 = xkplus1 + k / (k + 3) * (xkplus1 - xk)
+        ykplus1 = yk - t * (A @ (2 * ytilde_kplus1 - xk) - b)
+
+        # vD = -2 * t * A
+        # vE = t * A
+        beta_k = beta_func(k)
+        vD_k = - 2 * t * (1 + beta_k) * A
+        vE_k = t * (1 + 2 * beta_k) * A
+
+        ukplus1 = np.maximum(xC @ uk + xD @ vk + xE @ c, 0)
+        vkplus1 = vC @ vk + vD_k @ ukplus1 + vE_k @ uk + vF @ b
+
+        assert np.linalg.norm(xkplus1 - ukplus1) <= 1e-8
+        assert np.linalg.norm(ykplus1 - vkplus1) <= 1e-8
 
         xk = xkplus1
         # vk = vkplus1
         yk = ykplus1
+        uk = ukplus1
+        vk = vkplus1
 
     assert np.linalg.norm(xk - cp_x) <= 1e-2  # need to be pretty loose here
 

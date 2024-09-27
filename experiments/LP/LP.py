@@ -22,7 +22,7 @@ plt.rcParams.update({
 
 def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
                           utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
-                          ubar, vbar, xbar):
+                          ubar, vbar, xbar, momentum=False, beta_func=None):
     n, m = cfg.n, cfg.m
 
     model = gp.Model()
@@ -68,7 +68,15 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     # vF = t * spa.eye(m)
 
     for k in range(K):
-        model.addConstr(v[k+1] == v[k] + vD @ u[k+1] + vE @ u[k] + t * x)
+        if momentum:
+            beta_k = beta_func(k)  # offset by 1 since k is 1 -> K and not 0 -> K-1
+            vD_k = -2 * t * (1 + beta_k) * np_A
+            vE_k = t * (1 + 2 * beta_k) * np_A
+        else:
+            vD_k = vD
+            vE_k = vE
+
+        model.addConstr(v[k+1] == v[k] + vD_k @ u[k+1] + vE_k @ u[k] + t * x)
         # model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
 
     for k in range(K):
@@ -159,7 +167,7 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     return model.objVal / cfg.obj_scaling, outtime, u.X, v.X, x.X
 
 
-def BoundTight(K, A, c, t, cfg, basic=False):
+def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
     n, m = cfg.n, cfg.m
 
     n_var_shape = (K+1, n)
@@ -202,8 +210,6 @@ def BoundTight(K, A, c, t, cfg, basic=False):
     xE_c_upper, xE_c_lower = interval_bound_prop(xE, c, c)  # if c is param, change this
 
     for k in range(1, K+1):
-        # log.info(xC)
-        # log.info(u_LB[k-1])
         xC_uk_upper, xC_uk_lower = interval_bound_prop(xC, u_LB[k-1], u_UB[k-1])
         xD_vk_upper, xD_vk_lower = interval_bound_prop(xD, v_LB[k-1], v_UB[k-1])
 
@@ -213,18 +219,19 @@ def BoundTight(K, A, c, t, cfg, basic=False):
         u_LB = u_LB.at[k].set(jax.nn.relu(utilde_LB[k]))
         u_UB = u_UB.at[k].set(jax.nn.relu(utilde_UB[k]))
 
+        if momentum:
+            beta_k = beta_func(k-1)  # offset by 1 since k is 1 -> K and not 0 -> K-1
+            vD_k = -2 * t * (1 + beta_k) * A
+            vE_k = t * (1 + 2 * beta_k) * A
+        else:
+            vD_k = vD
+            vE_k = vE
         vC_vk_upper, vC_vk_lower = interval_bound_prop(vC, v_LB[k-1], v_UB[k-1])
-        vD_ukplus1_upper, vD_ukplus1_lower = interval_bound_prop(vD, u_LB[k], u_UB[k])
-        vE_uk_upper, vE_uk_lower = interval_bound_prop(vE, u_LB[k-1], u_UB[k-1])
+        vD_ukplus1_upper, vD_ukplus1_lower = interval_bound_prop(vD_k, u_LB[k], u_UB[k])
+        vE_uk_upper, vE_uk_lower = interval_bound_prop(vE_k, u_LB[k-1], u_UB[k-1])
         v_LB = v_LB.at[k].set(vC_vk_lower + vD_ukplus1_lower + vE_uk_lower + vF_x_lower)
         v_UB = v_UB.at[k].set(vC_vk_upper + vD_ukplus1_upper + vE_uk_upper + vF_x_upper)
 
-    # log.info(utilde_LB)
-    # log.info(utilde_UB)
-    # log.info(u_LB)
-    # log.info(u_UB)
-    # log.info(v_LB)
-    # log.info(v_UB)
     if basic:
         return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
@@ -247,9 +254,12 @@ def BoundTight(K, A, c, t, cfg, basic=False):
                     x = model.addMVar(m, lb=x_LB, ub=x_UB)
 
                     for k in range(kk):
-                        # model.addConstr(y[k+1] == np.asarray(A) @ z[k] + np.asarray(B) @ x)
                         model.addConstr(utilde[k+1] == u[k] - t * (np.asarray(c) - np_A.T @ v[k]))
-                        model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
+                        if momentum:
+                            beta_k = beta_func(k)
+                            model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * (u[k+1] + beta_k * (u[k+1] - u[k])) - u[k]) - x))
+                        else:
+                            model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
 
                         for i in range(n):
                             if utilde_UB[k+1, i] < -0.00001:
@@ -257,8 +267,6 @@ def BoundTight(K, A, c, t, cfg, basic=False):
                             elif utilde_LB[k+1, i] > 0.00001:
                                 model.addConstr(u[k+1, i] == utilde[k+1, i])
                             else:
-                                # model.addConstr(z[k+1, i] >= y[k+1, i])
-                                # model.addConstr(z[k+1, i] <= y_UB[k+1, i]/ (y_UB[k+1, i] - y_LB[k+1, i]) * (y[k+1, i] - y_LB[k+1, i]))
                                 model.addConstr(u[k+1, i] >= utilde[k+1, i])
                                 model.addConstr(u[k+1, i] <= utilde_UB[k+1, i]/ (utilde_UB[k+1, i] - utilde_LB[k+1, i]) * (u[k+1, i] - utilde_LB[k+1, i]))
 
@@ -295,7 +303,7 @@ def BoundTight(K, A, c, t, cfg, basic=False):
     return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
 
-def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1):
+def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1, momentum=False, beta_func=None):
     m, n = A.shape
     uk_all = jnp.zeros((K_max+1, n))
     vk_all = jnp.zeros((K_max+1, m))
@@ -309,7 +317,13 @@ def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1):
         uk = uk_all[k]
         vk = vk_all[k]
         ukplus1 = jax.nn.relu(uk - t * (c - A.T @ vk))
-        vkplus1 = vk - t * (A @ (2 * ukplus1 - uk) - x)
+
+        if momentum:
+            ytilde_kplus1 = ukplus1 + beta_func(k) * (ukplus1 - uk)
+            vkplus1 = vk - t * (A @ (2 * ytilde_kplus1 - uk) - x)
+        else:
+            vkplus1 = vk - t * (A @ (2 * ukplus1 - uk) - x)
+
         if pnorm == 'inf':
             resid = jnp.maximum(jnp.max(jnp.abs(ukplus1 - uk)), jnp.max(jnp.abs(vkplus1 - vk)))
         elif pnorm == 1:
@@ -333,7 +347,7 @@ def interval_bound_prop(A, l, u):
     return Ax_upper, Ax_lower
 
 
-def samples(cfg, A, c, t):
+def samples(cfg, A, c, t, momentum=False, beta_func=None):
     sample_idx = jnp.arange(cfg.samples.N)
 
     def u_sample(i):
@@ -356,7 +370,8 @@ def samples(cfg, A, c, t):
     x_samples = jax.vmap(x_sample)(sample_idx)
 
     def vanilla_pdhg_resids(i):
-        return jax_vanilla_PDHG(A, c, t, u_samples[i], v_samples[i], x_samples[i], cfg.K_max, pnorm=cfg.pnorm)
+        return jax_vanilla_PDHG(A, c, t, u_samples[i], v_samples[i], x_samples[i], cfg.K_max, pnorm=cfg.pnorm,
+                                momentum=momentum, beta_func=beta_func)
 
     _, _, sample_resids = jax.vmap(vanilla_pdhg_resids)(sample_idx)
     log.info(sample_resids)
@@ -369,30 +384,28 @@ def samples(cfg, A, c, t):
     return max_sample_resids[1:]
 
 
+def nesterov_beta_func(k):
+    return k / (k + 3)
+
+
 def LP_run(cfg, A, c, t):
     K_max = cfg.K_max
     K_min = cfg.K_min
+    momentum = cfg.momentum
+    if cfg.beta_func == 'nesterov':
+        beta_func = nesterov_beta_func
 
-    max_sample_resids = samples(cfg, A, c, t)
+    max_sample_resids = samples(cfg, A, c, t, momentum=momentum, beta_func=beta_func)
     log.info(max_sample_resids)
 
-    utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB = BoundTight(K_max, A, c, t, cfg, basic=cfg.basic_bounding)
+    utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB = BoundTight(K_max, A, c, t, cfg, basic=cfg.basic_bounding,
+                                                                          momentum=momentum, beta_func=beta_func)
 
-    # log.info('up right corner')
-    # x = cfg.x.u * jnp.ones(cfg.m)
-    # # x = jnp.array([1., 1., 0.94223])
-    # uk, vk, resids = jax_vanilla_PDHG(A, c, t, jnp.zeros(cfg.n), jnp.zeros(cfg.m), x, K_max, pnorm=cfg.pnorm)
-    # log.info(resids)
-    # log.info(uk)
-    # log.info(vk)
-
-    # log.info('u bounds:')
     # log.info(u_LB)
     # log.info(u_UB)
-
-    # log.info('v bounds:')
     # log.info(v_LB)
     # log.info(v_UB)
+    # log.info(jnp.linalg.norm(v_UB[K_max] - v_LB[K_max-1], 1) + jnp.linalg.norm(u_UB[K_max] - u_LB[K_max-1], 1))
 
     Deltas = []
     solvetimes = []
@@ -405,7 +418,7 @@ def LP_run(cfg, A, c, t):
         #                   ubar, vbar, xbar):
         delta_k, solvetime, ubar, vbar, xbar = VerifyPDHG_withBounds(k, A, c, t, cfg, Deltas,
                                                 utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
-                                                ubar, vbar, xbar)
+                                                ubar, vbar, xbar, momentum=momentum, beta_func=beta_func)
 
         log.info(xbar)
         log.info(ubar)
