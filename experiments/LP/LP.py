@@ -69,7 +69,7 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
 
     for k in range(K):
         if momentum:
-            beta_k = beta_func(k)  # offset by 1 since k is 1 -> K and not 0 -> K-1
+            beta_k = beta_func(k)
             vD_k = -2 * t * (1 + beta_k) * np_A
             vE_k = t * (1 + 2 * beta_k) * np_A
         else:
@@ -92,10 +92,11 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
                 model.addConstr(u[k+1, i] <= utildekplus1[i] - utilde_LB[k+1, i] * (1 - w[k+1, i]))
                 model.addConstr(u[k+1, i] <= utilde_UB[k+1, i] * w[k+1, i])
 
-    if ubar is not None:
-        u[:K-1].Start = ubar[:K-1]
-        v[:K-1].Start = vbar[:K-1]
-        x.Start = xbar
+    if cfg.warmstart:
+        if ubar is not None:
+            u[:K-1].Start = ubar[:K-1]
+            v[:K-1].Start = vbar[:K-1]
+            x.Start = xbar
 
     if pnorm == 1 or pnorm == 'inf':
         Uu = u_UB[K] - u_LB[K-1]
