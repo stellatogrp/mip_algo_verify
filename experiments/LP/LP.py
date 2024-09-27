@@ -31,10 +31,6 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     n_var_shape = (K+1, n)
     m_var_shape = (K+1, m)
 
-    # z = model.addMVar(var_shape, lb=z_LB[:K+1], ub=z_UB[:K+1])
-    # y = model.addMVar(var_shape, lb=y_LB[:K+1], ub=y_UB[:K+1])
-    # x = model.addMVar(n, lb=x_LB, ub=x_UB)
-    # w = model.addMVar(var_shape, vtype=gp.GRB.BINARY)
     u = model.addMVar(n_var_shape, lb=u_LB[:K+1], ub=u_UB[:K+1])
     v = model.addMVar(m_var_shape, lb=v_LB[:K+1], ub=v_UB[:K+1])
     x = model.addMVar(m, lb=x_LB, ub=x_UB)
@@ -136,7 +132,25 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
             model.setObjective(cfg.obj_scaling * (gp.quicksum(u_objp + u_objn) + gp.quicksum(v_objp + v_objn)), gp.GRB.MAXIMIZE)
             # model.setObjective(cfg.obj_scaling * (gp.quicksum(u_objp + u_objn)), gp.GRB.MAXIMIZE)
         elif pnorm == 'inf':
-            pass  # TODO
+            Mu = jnp.maximum(jnp.abs(Uu), jnp.abs(Lu))
+            Mv = jnp.maximum(jnp.abs(Uv), jnp.abs(Lv))
+            all_max = jnp.maximum(jnp.max(Mu), jnp.max(Mv))
+            q = model.addVar(ub=all_max)
+            gamma_u = model.addMVar(n, vtype=gp.GRB.BINARY)
+            gamma_v = model.addMVar(m, vtype=gp.GRB.BINARY)
+
+            for i in range(n):
+                Mu_i = jnp.abs(Uu[i]) + jnp.abs(Lu[i])
+                model.addConstr(q >= u_objp[i] + u_objn[i] - Mu_i * (1 - gamma_u[i]))
+                model.addConstr(q <= u_objp[i] + u_objn[i] + all_max * (1 - gamma_u[i]))
+
+            for i in range(m):
+                Mv_i = jnp.abs(Uv[i]) + jnp.abs(Lv[i])
+                model.addConstr(q >= v_objp[i] + v_objn[i] - Mv_i * (1 - gamma_v[i]))
+                model.addConstr(q <= v_objp[i] + v_objn[i] + all_max * (1 - gamma_v[i]))
+
+            model.addConstr(gp.quicksum(gamma_u) + gp.quicksum(gamma_v) == 1)
+            model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
     model.optimize()
 
