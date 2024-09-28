@@ -22,7 +22,7 @@ c:
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 50
+K_max: 2
 pnorm: 1
 obj_scaling: 1000
 warmstart: True
