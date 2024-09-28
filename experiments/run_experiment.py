@@ -46,6 +46,13 @@ NNQP_params = [
     ['n=40', 'two_step=False', 'one_step=True'],
 ]
 
+LP_params = [
+    ['l=0.5', 'momentum=True'],
+    ['l=0.5', 'momentum=False'],
+    ['l=0', 'momentum=True'],
+    ['l=0', 'momentum=False'],
+]
+
 
 def main():
     if len(sys.argv) < 3:
@@ -79,6 +86,9 @@ def main():
 
         if experiment == 'NNQP':
             hydra_tags += NNQP_params[job_idx]
+
+        if experiment == 'LP':
+            hydra_tags += LP_params[job_idx]
 
     sys.argv = [sys.argv[0]] + hydra_tags
 

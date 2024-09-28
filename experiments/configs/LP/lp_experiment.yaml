@@ -13,7 +13,7 @@ v0:
 
 x:
   type: 'box'
-  l: 0.5
+  l: 0
   u: 1
 
 c:
@@ -22,8 +22,8 @@ c:
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 15
-pnorm: inf
+K_max: 50
+pnorm: 1
 obj_scaling: 1000
 warmstart: True
 
