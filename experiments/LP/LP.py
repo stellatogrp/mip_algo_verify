@@ -31,10 +31,19 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     n_var_shape = (K+1, n)
     m_var_shape = (K+1, m)
 
+    # TODO readd this once debugged
     u = model.addMVar(n_var_shape, lb=u_LB[:K+1], ub=u_UB[:K+1])
     v = model.addMVar(m_var_shape, lb=v_LB[:K+1], ub=v_UB[:K+1])
     x = model.addMVar(m, lb=x_LB, ub=x_UB)
     w = model.addMVar(n_var_shape, vtype=gp.GRB.BINARY)
+
+    # u = model.addMVar(n_var_shape, lb=-np.inf, ub=np.inf)
+    # v = model.addMVar(m_var_shape, lb=-np.inf, ub=np.inf)
+    # x = model.addMVar(m, lb=x_LB, ub=x_UB)
+
+    # model.addConstr(u[0] == 0)
+    # model.addConstr(v[0] == 0)
+    # model.addConstr(u >= 0)
 
     # xC = jnp.eye(n)
     # xD = t * A.T
@@ -82,9 +91,9 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     for k in range(K):
         utildekplus1 = u[k] - t * (np_c - np_A.T @ v[k])
         for i in range(n):
-            if utilde_UB[k+1, i] < -0.00001:
+            if utilde_UB[k+1, i] < 0:
                 model.addConstr(u[k+1, i] == 0)
-            elif utilde_LB[k+1, i] > 0.00001:
+            elif utilde_LB[k+1, i] > 0:
                 model.addConstr(u[k+1, i] == utildekplus1[i])
             else:
                 model.addConstr(u[k+1, i] <= utilde_UB[k+1, i]/(utilde_UB[k+1, i] - utilde_LB[k+1, i]) * (utildekplus1[i] - utilde_LB[k+1, i]))
@@ -263,9 +272,9 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
                             model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
 
                         for i in range(n):
-                            if utilde_UB[k+1, i] < -0.00001:
+                            if utilde_UB[k+1, i] < 0:
                                 model.addConstr(u[k+1, i] == 0)
-                            elif utilde_LB[k+1, i] > 0.00001:
+                            elif utilde_LB[k+1, i] > 0:
                                 model.addConstr(u[k+1, i] == utilde[k+1, i])
                             else:
                                 model.addConstr(u[k+1, i] >= utilde[k+1, i])
@@ -279,7 +288,10 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
                         model.optimize()
 
                     if model.status != gp.GRB.OPTIMAL:
-                        print('bound tighting failed, GRB model status:', model.status)
+                        # print('bound tighting failed, GRB model status:', model.status)
+                        log.info(f'bound tighting failed, GRB model status: {model.status}')
+                        log.info(target)
+                        log.info(ii)
                         exit(0)
                         return None
 
@@ -474,6 +486,13 @@ def LP_run(cfg, A, c, t):
         plt.clf()
         plt.cla()
         plt.close()
+
+    # jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1, momentum=False, beta_func=None)
+    log.info('testing')
+    u, v, resids = jax_vanilla_PDHG(A, c, t, jnp.zeros(cfg.n), jnp.zeros(cfg.m), jnp.array([1, 1, 1, 1, 1]), cfg.K_max, pnorm=cfg.pnorm, momentum=cfg.momentum)
+    log.info(u)
+    log.info(v)
+    log.info(resids)
 
 
 def random_LP_run(cfg):
