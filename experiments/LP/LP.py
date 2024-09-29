@@ -82,7 +82,7 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     for k in range(K):
         utildekplus1 = u[k] - t * (np_c - np_A.T @ v[k])
         for i in range(n):
-            if utilde_UB[k+1, i] < 0:
+            if utilde_UB[k+1, i] <= 0:
                 model.addConstr(u[k+1, i] == 0)
             elif utilde_LB[k+1, i] > 0:
                 model.addConstr(u[k+1, i] == utildekplus1[i])
@@ -263,7 +263,7 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
                             model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
 
                         for i in range(n):
-                            if utilde_UB[k+1, i] < 0:
+                            if utilde_UB[k+1, i] <= 0:
                                 model.addConstr(u[k+1, i] == 0)
                             elif utilde_LB[k+1, i] > 0:
                                 model.addConstr(u[k+1, i] == utilde[k+1, i])
