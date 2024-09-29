@@ -47,10 +47,14 @@ NNQP_params = [
 ]
 
 LP_params = [
-    ['x.l=0.5', 'momentum=True'],
-    ['x.l=0.5', 'momentum=False'],
     ['x.l=0', 'momentum=True'],
     ['x.l=0', 'momentum=False'],
+    ['x.l=0.25', 'momentum=True'],
+    ['x.l=0.25', 'momentum=False'],
+    ['x.l=0.5', 'momentum=True'],
+    ['x.l=0.5', 'momentum=False'],
+    ['x.l=0.75', 'momentum=True'],
+    ['x.l=0.75', 'momentum=False'],
 ]
 
 

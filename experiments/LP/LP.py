@@ -31,19 +31,10 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     n_var_shape = (K+1, n)
     m_var_shape = (K+1, m)
 
-    # TODO readd this once debugged
     u = model.addMVar(n_var_shape, lb=u_LB[:K+1], ub=u_UB[:K+1])
     v = model.addMVar(m_var_shape, lb=v_LB[:K+1], ub=v_UB[:K+1])
     x = model.addMVar(m, lb=x_LB, ub=x_UB)
     w = model.addMVar(n_var_shape, vtype=gp.GRB.BINARY)
-
-    # u = model.addMVar(n_var_shape, lb=-np.inf, ub=np.inf)
-    # v = model.addMVar(m_var_shape, lb=-np.inf, ub=np.inf)
-    # x = model.addMVar(m, lb=x_LB, ub=x_UB)
-
-    # model.addConstr(u[0] == 0)
-    # model.addConstr(v[0] == 0)
-    # model.addConstr(u >= 0)
 
     # xC = jnp.eye(n)
     # xD = t * A.T
@@ -123,10 +114,10 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
         v_omega = model.addMVar(m, vtype=gp.GRB.BINARY)
 
         for i in range(n):
-            if Lu[i] > 0.00001:
+            if Lu[i] >= 0:
                 model.addConstr(u_objp[i] == u[K, i] - u[K-1, i])
                 model.addConstr(u_objn[i] == 0)
-            elif Uu[i] < -0.00001:
+            elif Uu[i] < 0:
                 model.addConstr(u_objn[i] == u[K-1, i] - u[K, i])
                 model.addConstr(u_objp[i] == 0)
             else:
@@ -135,10 +126,10 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
                 model.addConstr(u_objn[i] <= jnp.abs(Lu[i]) * (1-u_omega[i]))
 
         for i in range(m):
-            if Lv[i] > 0.00001:
+            if Lv[i] >= 0:
                 model.addConstr(v_objp[i] == v[K, i] - v[K-1, i])
                 model.addConstr(v_objn[i] == 0)
-            elif Uv[i] < -0.00001:
+            elif Uv[i] < 0:
                 model.addConstr(v_objn[i] == v[K-1, i] - v[K, i])
                 model.addConstr(v_objp[i] == 0)
             else:
