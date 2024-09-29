@@ -32,6 +32,9 @@ callback: True
 vanilla_resid_fname: vanilla_resids.csv
 vanilla_time_fname: vanilla_times.csv
 
+momentum_resid_fname: momentum_resids.csv
+momentum_time_fname: momentum_times.csv
+
 samples:
   u_seed_offset: 100
   v_seed_offset: 101

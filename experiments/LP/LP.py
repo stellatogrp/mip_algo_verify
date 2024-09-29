@@ -433,10 +433,16 @@ def LP_run(cfg, A, c, t):
         log.info(solvetimes)
 
         df = pd.DataFrame(Deltas)  # remove the first column of zeros
-        df.to_csv(cfg.vanilla_resid_fname, index=False, header=False)
+        if cfg.momentum:
+            df.to_csv(cfg.momentum_resid_fname, index=False, header=False)
+        else:
+            df.to_csv(cfg.vanilla_resid_fname, index=False, header=False)
 
         df = pd.DataFrame(solvetimes)
-        df.to_csv(cfg.vanilla_time_fname, index=False, header=False)
+        if cfg.momentum:
+            df.to_csv(cfg.momentum_resid_fname, index=False, header=False)
+        else:
+            df.to_csv(cfg.vanilla_time_fname, index=False, header=False)
 
         # plotting resids so far
         fig, ax = plt.subplots()
@@ -452,7 +458,10 @@ def LP_run(cfg, A, c, t):
 
         plt.tight_layout()
 
-        plt.savefig('vanilla_resids.pdf')
+        if cfg.momentum:
+            plt.savefig('momentum_resids.pdf')
+        else:
+            plt.savefig('vanilla_resids.pdf')
 
         plt.clf()
         plt.cla()
@@ -473,17 +482,20 @@ def LP_run(cfg, A, c, t):
 
         plt.tight_layout()
 
-        plt.savefig('vanilla_times.pdf')
+        if cfg.momentum:
+            plt.savefig('momentum_times.pdf')
+        else:
+            plt.savefig('vanilla_times.pdf')
         plt.clf()
         plt.cla()
         plt.close()
 
     # jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1, momentum=False, beta_func=None)
-    log.info('testing')
-    u, v, resids = jax_vanilla_PDHG(A, c, t, jnp.zeros(cfg.n), jnp.zeros(cfg.m), jnp.array([1, 1, 1, 1, 1]), cfg.K_max, pnorm=cfg.pnorm, momentum=cfg.momentum)
-    log.info(u)
-    log.info(v)
-    log.info(resids)
+    # log.info('testing')
+    # u, v, resids = jax_vanilla_PDHG(A, c, t, jnp.zeros(cfg.n), jnp.zeros(cfg.m), jnp.array([1, 1, 1, 1, 1]), cfg.K_max, pnorm=cfg.pnorm, momentum=cfg.momentum, beta_func=cfg.beta_func)
+    # log.info(u)
+    # log.info(v)
+    # log.info(resids)
 
 
 def random_LP_run(cfg):
