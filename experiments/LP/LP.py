@@ -82,7 +82,7 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     for k in range(K):
         utildekplus1 = u[k] - t * (np_c - np_A.T @ v[k])
         for i in range(n):
-            if utilde_UB[k+1, i] <= 0:
+            if utilde_UB[k+1, i] < 0:
                 model.addConstr(u[k+1, i] == 0)
             elif utilde_LB[k+1, i] > 0:
                 model.addConstr(u[k+1, i] == utildekplus1[i])
@@ -234,6 +234,13 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
         v_UB = v_UB.at[k].set(vC_vk_upper + vD_ukplus1_upper + vE_uk_upper + vF_x_upper)
 
     if basic:
+        M = 10
+        utilde_LB = jnp.clip(utilde_LB, -M, M)
+        utilde_UB = jnp.clip(utilde_UB, -M, M)
+        u_LB = jnp.clip(u_LB, 0, M)
+        u_UB = jnp.clip(u_UB, 0, M)
+        v_LB = jnp.clip(v_LB, -M, M)
+        v_UB = jnp.clip(v_UB, -M, M)
         return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
     target_var = ['u_tilde', 'v']
@@ -263,7 +270,7 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
                             model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
 
                         for i in range(n):
-                            if utilde_UB[k+1, i] <= 0:
+                            if utilde_UB[k+1, i] < 0:
                                 model.addConstr(u[k+1, i] == 0)
                             elif utilde_LB[k+1, i] > 0:
                                 model.addConstr(u[k+1, i] == utilde[k+1, i])
@@ -283,6 +290,9 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
                         log.info(f'bound tighting failed, GRB model status: {model.status}')
                         log.info(target)
                         log.info(ii)
+                        log.info(utilde_LB[kk, ii])
+                        log.info(utilde_UB[kk, ii])
+
                         exit(0)
                         return None
 
@@ -300,9 +310,21 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
                         else:
                             v_LB = v_LB.at[kk, ii].set(max(v_LB[kk, ii], obj))
 
+    M = 10
+    utilde_LB = jnp.clip(utilde_LB, -M, M)
+    utilde_UB = jnp.clip(utilde_UB, -M, M)
+    u_LB = jnp.clip(u_LB, 0, M)
+    u_UB = jnp.clip(u_UB, 0, M)
+    v_LB = jnp.clip(v_LB, -M, M)
+    v_UB = jnp.clip(v_UB, -M, M)
+
     log.info(jnp.all(utilde_UB - utilde_LB >= -1e-8))
     log.info(jnp.all(u_UB - u_LB >= -1e-8))
     log.info(jnp.all(v_UB - v_LB >= -1e-8))
+
+    log.info(utilde_UB)
+    log.info(u_UB)
+    log.info(v_UB)
 
     return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
@@ -440,7 +462,7 @@ def LP_run(cfg, A, c, t):
 
         df = pd.DataFrame(solvetimes)
         if cfg.momentum:
-            df.to_csv(cfg.momentum_resid_fname, index=False, header=False)
+            df.to_csv(cfg.momentum_time_fname, index=False, header=False)
         else:
             df.to_csv(cfg.vanilla_time_fname, index=False, header=False)
 

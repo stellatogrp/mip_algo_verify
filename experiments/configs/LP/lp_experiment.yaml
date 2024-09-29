@@ -2,7 +2,7 @@ m: 5
 n: 10
 rng_seed: 0
 stepsize: .1
-momentum: False
+momentum: True
 beta_func: nesterov
 
 u0:
@@ -13,16 +13,16 @@ v0:
 
 x:
   type: 'box'
-  l: 0.5
+  l: 0.75
   u: 1
 
 c:
   type: 'fixed'
 
-basic_bounding: False  # True = basic interval prop only, False = LP based bounding
+basic_bounding: True  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 50
+K_max: 48
 pnorm: 1
 obj_scaling: 1
 warmstart: True
