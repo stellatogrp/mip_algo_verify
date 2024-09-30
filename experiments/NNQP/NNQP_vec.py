@@ -95,12 +95,17 @@ def VerifyPGD_withBounds_twostep(K, A, B, t, cfg, Deltas,
             model.addConstr(gp.quicksum(gamma) == 1)
             model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
     elif pnorm == 2:
-        model.setObjective((z[K] - z[K-1]) @ (z[K] - z[K-1]), gp.GRB.MAXIMIZE)
+        model.setObjective(cfg.obj_scaling * (z[K] - z[K-1]) @ (z[K] - z[K-1]), gp.GRB.MAXIMIZE)
 
     model.update()
     model.optimize()
 
-    return model.objVal / cfg.obj_scaling, model.Runtime, z.X, y.X, x.X
+    if pnorm == 2:
+        outobj = np.sqrt(model.objVal / cfg.obj_scaling)
+    else:
+        outobj = model.objVal / cfg.obj_scaling
+
+    return outobj, model.Runtime, z.X, y.X, x.X
 
 
 def computeI_Icomp(x, a, w, Lhat, Uhat):
@@ -413,7 +418,12 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
     else:
         outtime = model.Runtime
 
-    return model.objVal / cfg.obj_scaling, outtime, z.X, x.X
+    if pnorm == 2:
+        outobj = np.sqrt(model.objVal / cfg.obj_scaling)
+    else:
+        outobj = model.objVal / cfg.obj_scaling
+
+    return outobj, outtime, z.X, x.X
 
 def BoundTightY(K, A, B, t, cfg, basic=False):
     n = cfg.n
