@@ -204,6 +204,8 @@ def VerifyPGD_withBounds_onestep(K, A, B, t, cfg, Deltas,
                 model.addConstr(q <= up[i] + un[i] + jnp.max(M) * (1 - gamma[i]))
             model.addConstr(gp.quicksum(gamma) == 1)
             model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
+    elif pnorm == 2:
+        model.setObjective(cfg.obj_scaling * (z[K] - z[K-1]) @ (z[K] - z[K-1]), gp.GRB.MAXIMIZE)
 
     if cfg.jax_callback:
         # model.Params.lazyConstraints = 1

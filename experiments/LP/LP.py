@@ -233,14 +233,14 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
         v_LB = v_LB.at[k].set(vC_vk_lower + vD_ukplus1_lower + vE_uk_lower + vF_x_lower)
         v_UB = v_UB.at[k].set(vC_vk_upper + vD_ukplus1_upper + vE_uk_upper + vF_x_upper)
 
+    M = 10
+    utilde_LB = jnp.clip(utilde_LB, -M, M)
+    utilde_UB = jnp.clip(utilde_UB, -M, M)
+    u_LB = jnp.clip(u_LB, 0, M)
+    u_UB = jnp.clip(u_UB, 0, M)
+    v_LB = jnp.clip(v_LB, -M, M)
+    v_UB = jnp.clip(v_UB, -M, M)
     if basic:
-        M = 10
-        utilde_LB = jnp.clip(utilde_LB, -M, M)
-        utilde_UB = jnp.clip(utilde_UB, -M, M)
-        u_LB = jnp.clip(u_LB, 0, M)
-        u_UB = jnp.clip(u_UB, 0, M)
-        v_LB = jnp.clip(v_LB, -M, M)
-        v_UB = jnp.clip(v_UB, -M, M)
         return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
     target_var = ['u_tilde', 'v']

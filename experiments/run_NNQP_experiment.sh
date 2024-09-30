@@ -2,10 +2,10 @@
 #SBATCH --job-name=NNQP
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem-per-cpu=8G
-#SBATCH --time=12:00:00
-#SBATCH --array=0-5
+#SBATCH --cpus-per-task=16
+#SBATCH --mem-per-cpu=4G
+#SBATCH --time=23:59:59
+#SBATCH --array=0-7
 #SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/NNQP/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=vranjan@princeton.edu

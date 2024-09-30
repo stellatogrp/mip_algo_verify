@@ -18,8 +18,8 @@ x:
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 50
-pnorm: 1
+K_max: 40
+pnorm: 2
 obj_scaling: 10000
 warmstart: True
 

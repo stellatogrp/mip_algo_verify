@@ -19,10 +19,10 @@ x:
 c:
   type: 'fixed'
 
-basic_bounding: True  # True = basic interval prop only, False = LP based bounding
+basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 
 K_min: 1
-K_max: 48
+K_max: 50
 pnorm: 1
 obj_scaling: 1
 warmstart: True

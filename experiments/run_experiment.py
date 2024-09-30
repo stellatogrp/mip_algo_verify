@@ -38,6 +38,8 @@ func_driver_map = {
 
 
 NNQP_params = [
+    ['n=10', 'two_step=True', 'one_step=False'],
+    ['n=10', 'two_step=False', 'one_step=True'],
     ['n=20', 'two_step=True', 'one_step=False'],
     ['n=20', 'two_step=False', 'one_step=True'],
     ['n=30', 'two_step=True', 'one_step=False'],
