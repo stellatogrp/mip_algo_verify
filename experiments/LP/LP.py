@@ -149,13 +149,15 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
             gamma_v = model.addMVar(m, vtype=gp.GRB.BINARY)
 
             for i in range(n):
-                Mu_i = jnp.abs(Uu[i]) + jnp.abs(Lu[i])
-                model.addConstr(q >= u_objp[i] + u_objn[i] - Mu_i * (1 - gamma_u[i]))
+                # Mu_i = jnp.abs(Uu[i]) + jnp.abs(Lu[i])
+                # model.addConstr(q >= u_objp[i] + u_objn[i] - Mu_i * (1 - gamma_u[i]))
+                model.addConstr(q >= u_objp[i] + u_objn[i])
                 model.addConstr(q <= u_objp[i] + u_objn[i] + all_max * (1 - gamma_u[i]))
 
             for i in range(m):
-                Mv_i = jnp.abs(Uv[i]) + jnp.abs(Lv[i])
-                model.addConstr(q >= v_objp[i] + v_objn[i] - Mv_i * (1 - gamma_v[i]))
+                # Mv_i = jnp.abs(Uv[i]) + jnp.abs(Lv[i])
+                # model.addConstr(q >= v_objp[i] + v_objn[i] - Mv_i * (1 - gamma_v[i]))
+                model.addConstr(q >= v_objp[i] + v_objn[i])
                 model.addConstr(q <= v_objp[i] + v_objn[i] + all_max * (1 - gamma_v[i]))
 
             model.addConstr(gp.quicksum(gamma_u) + gp.quicksum(gamma_v) == 1)
