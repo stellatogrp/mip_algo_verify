@@ -1,7 +1,8 @@
-from gurobipy import Model, GRB, quicksum, max_
 from time import perf_counter
 
 import numpy as np
+from gurobipy import GRB, Model, quicksum
+
 
 def SoftThresholding(y, lambda_t):
     if y > lambda_t:
@@ -35,13 +36,13 @@ def BoundPreprocessing(n, k, At, y_LB, y_UB, z_LB, z_UB, LB_theta, UB_theta):
     for i in range(n):
         y_LB[i, k]  = LB_theta[i]
         y_LB[i, k] += sum(At[i, j]*z_LB[j, k-1] for j in range(n) if At[i, j] > 0)
-        y_LB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] < 0) 
-        
-        y_UB[i, k] = UB_theta[i]
-        y_UB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] > 0) 
-        y_UB[i, k] += sum(At[i, j]*z_LB[j, k-1] for j in range(n) if At[i, j] < 0) 
+        y_LB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] < 0)
 
-        if y_LB[i, k] > y_UB[i, k]: 
+        y_UB[i, k] = UB_theta[i]
+        y_UB[i, k] += sum(At[i, j]*z_UB[j, k-1] for j in range(n) if At[i, j] > 0)
+        y_UB[i, k] += sum(At[i, j]*z_LB[j, k-1] for j in range(n) if At[i, j] < 0)
+
+        if y_LB[i, k] > y_UB[i, k]:
             raise ValueError('Basic Infeasible bounds y', y_LB[i, k], y_UB[i, k])
 
     return y_LB, y_UB
@@ -60,20 +61,20 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_
     # model.Params.Method = 0
 
     # Create variables
-    z, y, theta = {}, {}, {}   
-    
+    z, y, theta = {}, {}, {}
+
     for h in range(m):
         theta[h] = model.addVar(lb=c_theta[h] - r_theta, ub=c_theta[h] + r_theta)
 
     for k in range(K-1):
         for i in range(n):
-            if z_LB[i, k] > z_UB[i, k]: 
-                raise ValueError('Infeasible bounds z', i, k, z_LB[i, k], z_UB[i, k])            
+            if z_LB[i, k] > z_UB[i, k]:
+                raise ValueError('Infeasible bounds z', i, k, z_LB[i, k], z_UB[i, k])
             z[i, k] = model.addVar(lb=z_LB[i, k], ub=z_UB[i, k])
 
     for k in range(1, K):
         for i in range(n):
-            if y_LB[i, k] > y_UB[i, k]: 
+            if y_LB[i, k] > y_UB[i, k]:
                 raise ValueError('Infeasible bounds y', i, k, y_LB[i, k], y_UB[i, k])
             y[i, k] = model.addVar(lb=y_LB[i, k], ub=y_UB[i, k])
 
@@ -103,7 +104,7 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_
 
                 model.addConstr(z[i, k] <= z_UB[i, k]/(y_UB[i, k] + lambda_t)*(y[i, k] + lambda_t))
                 model.addConstr(z[i, k] >= z_LB[i, k]/(y_LB[i, k] - lambda_t)*(y[i, k] - lambda_t))
-            
+
             elif -lambda_t <= y_LB[i, k] <= lambda_t and y_UB[i, k] > lambda_t:
                 model.addConstr(z[i, k] >= 0)
                 model.addConstr(z[i, k] <= z_UB[i, k]/(y_UB[i, k] - y_LB[i, k])*(y[i, k] - y_LB[i, k]))
@@ -115,7 +116,7 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_
                 model.addConstr(z[i, k] <= y[i, k] + lambda_t)
             else:
                 raise RuntimeError('Unreachable code', y_LB[i, k], y_UB[i, k], lambda_t)
-        
+
     model.update()
     return model, y
 
@@ -131,13 +132,14 @@ def BoundTightY(k, n, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_LB,
             if model.status != GRB.OPTIMAL:
                 print('bound tighting failes, GRB model status:', model.status)
                 return None
-            
+
             if sense == GRB.MAXIMIZE:
                 y_UB[i, k] = model.objVal
             else:
                 y_LB[i, k] = model.objVal
 
-            if y_LB[i, k] > y_UB[i, k]: raise ValueError('Infeasible bounds', sense, i, k, y_LB[i, k], y_UB[i, k])
+            if y_LB[i, k] > y_UB[i, k]:
+                raise ValueError('Infeasible bounds', sense, i, k, y_LB[i, k], y_UB[i, k])
 
     return y_LB, y_UB
 
@@ -153,11 +155,11 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
 
         for i in range(n):
             z[i, 0] = model.addVar(lb=z_0[i], ub=z_0[i])
-        
+
         model.update()
 
         return model
-    
+
     def ModelNextStep(model, n, k, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_LB, z_UB):
 
         # Devo agginugere nuove variabili e vincoli
@@ -168,14 +170,14 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
             if (i, k) not in z_LB:
                 z_LB[i, k] = SoftThresholding(y_LB[i, k], lambda_t)
                 z_UB[i, k] = SoftThresholding(y_UB[i, k], lambda_t)
-            
+
             z[i, k] = model.addVar(lb=z_LB[i, k], ub=z_UB[i, k])
 
         if k == 1:
             for i in range(n):
                 v[i] = model.addVar(vtype=GRB.BINARY)
                 up[i] = model.addVar(lb=0, ub=max(0.0, z_UB[i, k] - z_LB[i, k-1]))
-                un[i] = model.addVar(lb=0, ub=max(0.0, z_UB[i, k-1] - z_LB[i, k])) 
+                un[i] = model.addVar(lb=0, ub=max(0.0, z_UB[i, k-1] - z_LB[i, k]))
             # Mannhattan norm (p=1)
             model.setObjective(quicksum((up[i] + un[i]) for i in range(n)), GRB.MAXIMIZE)
         else:
@@ -185,7 +187,7 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
                 model.remove(objcnstr1[i])
                 model.remove(objcnstr2[i])
                 model.remove(objcnstr3[i])
-    
+
             model.update()
 
         # Constraints fun obj
@@ -193,7 +195,7 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
             objcnstr1[i] = model.addConstr(up[i] - un[i] == z[i, k] - z[i, k-1])
             objcnstr2[i] = model.addConstr(up[i] <= (z_UB[i, k] - z_LB[i, k-1])*v[i])
             objcnstr3[i] = model.addConstr(un[i] <= (z_UB[i, k-1] - z_LB[i, k])*(1 - v[i]))
-  
+
         model.update()
 
         for i in range(n):
@@ -270,9 +272,9 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
         if model.status != GRB.OPTIMAL:
             print('model status:', model.status)
             return None
-    
+
         return model.objVal
-    
+
 
     # Space dimensions
     n = len(z_0)
@@ -280,14 +282,14 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
     # Local variables
     z_LB, z_UB, LB_theta, UB_theta = InitBoundZ(n, m, Bt, z_0, c_theta, r_theta)
     y_LB, y_UB = {}, {}
-    
+
     # MIP model
     z, y, theta = {}, {}, {}
     up, un, v = {}, {}, {}
     w1, w2 = {}, {}
     delta = {}
     objcnstr1, objcnstr2, objcnstr3 = {}, {}, {}
-    
+
     model = Init_model()
 
     # Start iterating
@@ -302,7 +304,7 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
 
         print(k, 'Delta:', delta[k], model.runtime)
 
-        # Update bounds for z 
+        # Update bounds for z
         Dk = sum(delta[k] for k in delta)
         for i in range(n):
             if z_0[i] - Dk > SoftThresholding(y_LB[i, k], lambda_t):
@@ -327,7 +329,7 @@ def MakeData(best_t=False):
 
     lambd = 10
     t = 0.04
-    
+
     m, n = 10,15
     A = Generate_A_mat(m, n, seed)
 
@@ -337,7 +339,7 @@ def MakeData(best_t=False):
         mu = np.min(eigs)
         L = np.max(eigs)
         t = np.real(2 / (mu + L))
-    
+
     lambda_t = lambd*t
 
     At = np.eye(n) - t*(A.T @ A)
