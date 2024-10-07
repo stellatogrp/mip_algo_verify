@@ -4,6 +4,7 @@ import sys
 
 import hydra
 import LP.LP as LP
+import LP.LP_incremental as LP_incr
 import NNQP.NNQP as NNQP
 import NNQP.NNQP_vec as NNQP_vec
 
@@ -22,7 +23,10 @@ def main_experiment_nnqp(cfg):
 
 @hydra.main(version_base='1.2', config_path='configs/LP', config_name='lp_experiment.yaml')
 def main_experiment_lp(cfg):
-    LP.run(cfg)
+    if cfg.incremental:
+        LP_incr.run(cfg)
+    else:
+        LP.run(cfg)
 
 
 base_dir_map = {
