@@ -23,9 +23,9 @@ basic_bounding: False  # True = basic interval prop only, False = LP based bound
 incremental: False
 
 K_min: 1
-K_max: 40
+K_max: 100
 pnorm: inf
-obj_scaling: 1
+obj_scaling: 100
 warmstart: True
 
 callback: True

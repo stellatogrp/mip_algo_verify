@@ -64,10 +64,10 @@ NNQP_params = [
 # ]
 
 LP_params = [
-    ['x.l=0.5', 'incremental=True'],
-    ['x.l=0.5', 'incremental=False'],
     ['x.l=0.75', 'incremental=True'],
     ['x.l=0.75', 'incremental=False'],
+    ['x.l=0.75', 'incremental=True', 'm=10', 'n=20', 'K_max=75'],
+    ['x.l=0.75', 'incremental=False', 'm=10', 'n=20', 'K_max=75'],
 ]
 
 

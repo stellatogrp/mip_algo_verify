@@ -541,7 +541,8 @@ def LP_run(cfg, A, c, t):
     v_LB = v_LB.at[0].set(0)
     v_UB = v_UB.at[0].set(0)
 
-    init_C = init_dist(cfg, A, c, t)
+    # init_C = init_dist(cfg, A, c, t)
+    init_C = 1e4
 
     np_A = np.asarray(A)
     np_c = np.asarray(c)

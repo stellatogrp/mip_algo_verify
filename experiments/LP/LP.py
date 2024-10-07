@@ -489,8 +489,8 @@ def LP_run(cfg, A, c, t):
     max_sample_resids = samples(cfg, A, c, t, momentum=momentum, beta_func=beta_func)
     log.info(max_sample_resids)
 
-    init_C = init_dist(cfg, A, c, t)
-    # init_C = 1e8
+    # init_C = init_dist(cfg, A, c, t)
+    init_C = 1e4
     log.info(init_C)
 
     utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB = BoundTight(K_max, A, c, t, cfg, basic=cfg.basic_bounding,
