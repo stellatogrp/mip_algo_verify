@@ -52,15 +52,22 @@ NNQP_params = [
     ['n=40', 'two_step=False', 'one_step=True'],
 ]
 
+# LP_params = [
+#     ['x.l=0', 'momentum=True'],
+#     ['x.l=0', 'momentum=False'],
+#     ['x.l=0.25', 'momentum=True'],
+#     ['x.l=0.25', 'momentum=False'],
+#     ['x.l=0.5', 'momentum=True'],
+#     ['x.l=0.5', 'momentum=False'],
+#     ['x.l=0.75', 'momentum=True'],
+#     ['x.l=0.75', 'momentum=False'],
+# ]
+
 LP_params = [
-    ['x.l=0', 'momentum=True'],
-    ['x.l=0', 'momentum=False'],
-    ['x.l=0.25', 'momentum=True'],
-    ['x.l=0.25', 'momentum=False'],
-    ['x.l=0.5', 'momentum=True'],
-    ['x.l=0.5', 'momentum=False'],
-    ['x.l=0.75', 'momentum=True'],
-    ['x.l=0.75', 'momentum=False'],
+    ['x.l=0.5', 'incremental=True'],
+    ['x.l=0.5', 'incremental=False'],
+    ['x.l=0.75', 'incremental=True'],
+    ['x.l=0.75', 'incremental=False'],
 ]
 
 
