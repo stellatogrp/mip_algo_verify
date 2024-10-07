@@ -545,28 +545,28 @@ def LP_run(cfg, A, c, t):
 
         model.update()
 
-        u_objp, u_objn, u_omega = None, None, None
-        v_objp, v_objn, v_omega = None, None, None
-        q, gamma_u, gamma_v = None, None, None
+        # u_objp, u_objn, u_omega = None, None, None
+        # v_objp, v_objn, v_omega = None, None, None
+        # q, gamma_u, gamma_v = None, None, None
         obj_constraints = []
 
         if cfg.pnorm == 1 or cfg.pnorm == 'inf':
-            if K >= 2:
-                model.remove(u_objp)
-                model.remove(u_objn)
-                model.remove(u_omega)
+            # if K >= 2:
+            #     model.remove(u_objp)
+            #     model.remove(u_objn)
+            #     model.remove(u_omega)
 
-                model.remove(v_objp)
-                model.remove(v_objn)
-                model.remove(v_omega)
+            #     model.remove(v_objp)
+            #     model.remove(v_objn)
+            #     model.remove(v_omega)
 
-                if pnorm == 'inf':
-                    model.remove(q)
-                    model.remove(gamma_u)
-                    model.remove(gamma_v)
+            #     if pnorm == 'inf':
+            #         model.remove(q)
+            #         model.remove(gamma_u)
+            #         model.remove(gamma_v)
 
-                for constr in obj_constraints:
-                    model.remove(constr)
+            for constr in obj_constraints:
+                model.remove(constr)
 
             Uu = u_UB[K] - u_LB[K-1]
             Lu = u_LB[K] - u_UB[K-1]
