@@ -298,10 +298,6 @@ def BoundPreprocess(K, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
     v_LB = v_LB.at[K].set(vC_vk_lower + vD_ukplus1_lower + vE_uk_lower + vF_x_lower)
     v_UB = v_UB.at[K].set(vC_vk_upper + vD_ukplus1_upper + vE_uk_upper + vF_x_upper)
 
-    # TODO: LP based and then upper bound tighten
-    if basic_bounding:
-        return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB
-
     # log.info(u_LB)
     # log.info(u_UB)
     # log.info(v_LB)
@@ -368,34 +364,81 @@ def BoundPreprocess(K, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
                 else:
                     v_LB = v_LB.at[K, i].set(max(v_LB[K, i], obj))
 
+    if basic_bounding:
+        return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB
+
     log.info('-computing LP based bounds-')  #TODO: finish this
-    LP_model = gp.Model()
-    LP_model.Params.OutputFlag = 0
+    # LP_model = gp.Model()
+    # LP_model.Params.OutputFlag = 0
 
-    utilde = LP_model.addMVar((K+1, n), lb=utilde_LB[:K+1], ub=utilde_UB[:K+1])
-    u = LP_model.addMVar((K+1, n), lb=u_LB[:K+1], ub=u_UB[:K+1])
-    v = LP_model.addMVar((K+1, m), lb=v_LB[:K+1], ub=v_UB[:K+1])
-    x = LP_model.addMVar(m, lb=x_LB, ub=x_UB)
+    # utilde = LP_model.addMVar((K+1, n), lb=utilde_LB[:K+1], ub=utilde_UB[:K+1])
+    # u = LP_model.addMVar((K+1, n), lb=u_LB[:K+1], ub=u_UB[:K+1])
+    # v = LP_model.addMVar((K+1, m), lb=v_LB[:K+1], ub=v_UB[:K+1])
+    # x = LP_model.addMVar(m, lb=x_LB, ub=x_UB)
 
-    np_A = np.asarray(A)
-    for k in range(1, K+1):
-        LP_model.addConstr(utilde[k] == u[k-1] - t * (np.asarray(c) - np_A.T @ v[k-1]))
-        if cfg.momentum:
-            beta_k = beta_func(k-1)
-            LP_model.addConstr(v[k] == v[k-1] - t * (np_A @ (2 * (u[k] + beta_k * (u[k] - u[k-1])) - u[k-1]) - x))
-        else:
-            LP_model.addConstr(v[k] == v[k-1] - t * (np_A @ (2 * u[k] - u[k-1]) - x))
+    # np_A = np.asarray(A)
+    # for k in range(1, K+1):
+    #     LP_model.addConstr(utilde[k] == u[k-1] - t * (np.asarray(c) - np_A.T @ v[k-1]))
+    #     if cfg.momentum:
+    #         beta_k = beta_func(k-1)
+    #         LP_model.addConstr(v[k] == v[k-1] - t * (np_A @ (2 * (u[k] + beta_k * (u[k] - u[k-1])) - u[k-1]) - x))
+    #     else:
+    #         LP_model.addConstr(v[k] == v[k-1] - t * (np_A @ (2 * u[k] - u[k-1]) - x))
 
-    for i in range(n):
-        if utilde_UB[K, i] <= 0:
-            LP_model.addConstr(u[K, i] == 0)
-        elif utilde_LB[K, i] > 0:
-            LP_model.addConstr(u[K, i] == utilde[K, i])
-        else:
-            LP_model.addConstr(u[K, i] >= utilde[K, i])
-            LP_model.addConstr(u[K, i] <= utilde_UB[K, i]/ (utilde_UB[K, i] - utilde_LB[K, i]) * (u[K, i] - utilde_LB[K, i]))
+    # for i in range(n):
+    #     if utilde_UB[K, i] <= 0:
+    #         LP_model.addConstr(u[K, i] == 0)
+    #     elif utilde_LB[K, i] > 0:
+    #         LP_model.addConstr(u[K, i] == utilde[K, i])
+    #     else:
+    #         LP_model.addConstr(u[K, i] >= utilde[K, i])
+    #         LP_model.addConstr(u[K, i] <= utilde_UB[K, i]/ (utilde_UB[K, i] - utilde_LB[K, i]) * (u[K, i] - utilde_LB[K, i]))
+
+    # target_var = ['u_tilde', 'v']
+    # for target in target_var:
+    #     if target == 'u_tilde':
+    #         range_var = n
+    #     else:
+    #         range_var = m
+    #     for ii in range(range_var):
+    #         for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+    #             if target == 'u_tilde':
+    #                 LP_model.setObjective(utilde[K, ii], sense)
+    #                 LP_model.optimize()
+    #             else:
+    #                 LP_model.setObjective(v[K, ii], sense)
+    #                 LP_model.optimize()
+
+    #             if LP_model.status != gp.GRB.OPTIMAL:
+    #                 # print('bound tighting failed, GRB model status:', model.status)
+    #                 log.info(f'bound tighting failed, GRB model status: {LP_model.status}')
+    #                 log.info(target)
+    #                 log.info(ii)
+    #                 log.info(utilde_LB[K, ii])
+    #                 log.info(utilde_UB[K, ii])
+
+    #                 exit(0)
+    #                 return None
+
+    #             obj = LP_model.objVal
+    #             if target == 'u_tilde':
+    #                 if sense == gp.GRB.MAXIMIZE:
+    #                     utilde_UB = utilde_UB.at[K, ii].set(min(utilde_UB[K, ii], obj))
+    #                     u_UB = u_UB.at[K, ii].set(jax.nn.relu(utilde_UB[K, ii]))
+    #                 else:
+    #                     utilde_LB = utilde_LB.at[K, ii].set(max(utilde_LB[K, ii], obj))
+    #                     u_LB = u_LB.at[K, ii].set(jax.nn.relu(utilde_LB[K, ii]))
+    #             else: # target == 'v'
+    #                 if sense == gp.GRB.MAXIMIZE:
+    #                     v_UB = v_UB.at[K, ii].set(min(v_UB[K, ii], obj))
+    #                 else:
+    #                     v_LB = v_LB.at[K, ii].set(max(v_LB[K, ii], obj))
 
     target_var = ['u_tilde', 'v']
+    np_A = np.asarray(A)
+    # for kk in range(1, K+1):
+    # log.info(f'^^^^^^^^ Bound tightening, K={kk} ^^^^^^^^^^')
+    kk = K
     for target in target_var:
         if target == 'u_tilde':
             range_var = n
@@ -403,37 +446,62 @@ def BoundPreprocess(K, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
             range_var = m
         for ii in range(range_var):
             for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
-                if target == 'u_tilde':
-                    LP_model.setObjective(utilde[K, ii], sense)
-                    LP_model.optimize()
-                else:
-                    LP_model.setObjective(v[K, ii], sense)
-                    LP_model.optimize()
+                model = gp.Model()
+                model.Params.OutputFlag = 0
 
-                if LP_model.status != gp.GRB.OPTIMAL:
+                utilde = model.addMVar((K+1, n), lb=utilde_LB[:K+1], ub=utilde_UB[:K+1])
+                u = model.addMVar((K+1, n), lb=u_LB[:K+1], ub=u_UB[:K+1])
+                v = model.addMVar((K+1, m), lb=v_LB[:K+1], ub=v_UB[:K+1])
+                x = model.addMVar(m, lb=x_LB, ub=x_UB)
+
+                for k in range(kk):
+                    model.addConstr(utilde[k+1] == u[k] - t * (np.asarray(c) - np_A.T @ v[k]))
+                    if cfg.momentum:
+                        beta_k = beta_func(k)
+                        model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * (u[k+1] + beta_k * (u[k+1] - u[k])) - u[k]) - x))
+                    else:
+                        model.addConstr(v[k+1] == v[k] - t * (np_A @ (2 * u[k+1] - u[k]) - x))
+
+                    for i in range(n):
+                        if utilde_UB[k+1, i] <= 0:
+                            model.addConstr(u[k+1, i] == 0)
+                        elif utilde_LB[k+1, i] > 0:
+                            model.addConstr(u[k+1, i] == utilde[k+1, i])
+                        else:
+                            model.addConstr(u[k+1, i] >= utilde[k+1, i])
+                            model.addConstr(u[k+1, i] <= utilde_UB[k+1, i]/ (utilde_UB[k+1, i] - utilde_LB[k+1, i]) * (u[k+1, i] - utilde_LB[k+1, i]))
+
+                if target == 'u_tilde':
+                    model.setObjective(utilde[kk, ii], sense)
+                    model.optimize()
+                else:
+                    model.setObjective(v[kk, ii], sense)
+                    model.optimize()
+
+                if model.status != gp.GRB.OPTIMAL:
                     # print('bound tighting failed, GRB model status:', model.status)
-                    log.info(f'bound tighting failed, GRB model status: {LP_model.status}')
+                    log.info(f'bound tighting failed, GRB model status: {model.status}')
                     log.info(target)
                     log.info(ii)
-                    log.info(utilde_LB[K, ii])
-                    log.info(utilde_UB[K, ii])
+                    log.info(utilde_LB[kk, ii])
+                    log.info(utilde_UB[kk, ii])
 
                     exit(0)
                     return None
 
-                obj = LP_model.objVal
+                obj = model.objVal
                 if target == 'u_tilde':
                     if sense == gp.GRB.MAXIMIZE:
-                        utilde_UB = utilde_UB.at[K, ii].set(min(utilde_UB[K, ii], obj))
-                        u_UB = u_UB.at[K, ii].set(jax.nn.relu(utilde_UB[K, ii]))
+                        utilde_UB = utilde_UB.at[kk, ii].set(min(utilde_UB[kk, ii], obj))
+                        u_UB = u_UB.at[kk, ii].set(jax.nn.relu(utilde_UB[kk, ii]))
                     else:
-                        utilde_LB = utilde_LB.at[K, ii].set(max(utilde_LB[K, ii], obj))
-                        u_LB = u_LB.at[K, ii].set(jax.nn.relu(utilde_LB[K, ii]))
+                        utilde_LB = utilde_LB.at[kk, ii].set(max(utilde_LB[kk, ii], obj))
+                        u_LB = u_LB.at[kk, ii].set(jax.nn.relu(utilde_LB[kk, ii]))
                 else: # target == 'v'
                     if sense == gp.GRB.MAXIMIZE:
-                        v_UB = v_UB.at[K, ii].set(min(v_UB[K, ii], obj))
+                        v_UB = v_UB.at[kk, ii].set(min(v_UB[kk, ii], obj))
                     else:
-                        v_LB = v_LB.at[K, ii].set(max(v_LB[K, ii], obj))
+                        v_LB = v_LB.at[kk, ii].set(max(v_LB[kk, ii], obj))
 
     return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB
 
@@ -522,6 +590,16 @@ def LP_run(cfg, A, c, t):
         utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB = BoundPreprocess(
             K, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, cfg, A, c, t, init_C, basic_bounding=cfg.basic_bounding,
         )
+
+        for ii in range(n):
+            model.setAttr(gp.GRB.Attr.LB, u[K-1][ii].item(), u_LB[K-1, ii])
+            model.setAttr(gp.GRB.Attr.UB, u[K-1][ii].item(), u_UB[K-1, ii])
+
+        for ii in range(m):
+            model.setAttr(gp.GRB.Attr.LB, v[K-1][ii].item(), v_LB[K-1, ii])
+            model.setAttr(gp.GRB.Attr.UB, v[K-1][ii].item(), v_UB[K-1, ii])
+
+        model.update()
 
         u[K] = model.addMVar(n, lb=u_LB[K], ub=u_UB[K])
         v[K] = model.addMVar(m, lb=v_LB[K], ub=v_UB[K])
@@ -636,13 +714,23 @@ def LP_run(cfg, A, c, t):
         solvetimes.append(model.Runtime)
         Dk = jnp.sum(jnp.array(Deltas))
 
+        # log.info(u_LB)
+        # log.info(u_UB)
+        # log.info(v_LB)
+        # log.info(v_UB)
+
+        # post processing
         for i in range(n):
-            u_LB = u_LB.at[K, i].max(u_LB[0, i] - Dk)
-            u_UB = u_UB.at[K, i].min(u_UB[0, i] + Dk)
+            # u_LB = u_LB.at[K, i].max(u_LB[0, i] - Dk)
+            # u_UB = u_UB.at[K, i].min(u_UB[0, i] + Dk)
+            u_LB = u_LB.at[K, i].set(max(u_LB[K, i], u_LB[0, i] - Dk))
+            u_UB = u_UB.at[K, i].set(min(u_UB[K, i], u_UB[0, i] + Dk))
 
         for i in range(m):
-            v_LB = v_LB.at[K, i].max(v_LB[0, i] - Dk)
-            v_UB = v_UB.at[K, i].min(v_UB[0, i] + Dk)
+            # v_LB = v_LB.at[K, i].max(v_LB[0, i] - Dk)
+            # v_UB = v_UB.at[K, i].min(v_UB[0, i] + Dk)
+            v_LB = v_LB.at[K, i].set(max(v_LB[K, i], v_LB[0, i] - Dk))
+            v_UB = v_UB.at[K, i].set(min(v_UB[K, i], v_UB[0, i] + Dk))
 
         log.info(Deltas)
         log.info(solvetimes)
@@ -707,6 +795,11 @@ def LP_run(cfg, A, c, t):
 
     # log.info(Deltas)
     # log.info(solvetimes)
+
+    # log.info(u_LB)
+    # log.info(u_UB)
+    # log.info(v_LB)
+    # log.info(v_UB)
 
 
 def random_LP_run(cfg):

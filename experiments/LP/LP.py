@@ -6,6 +6,9 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy as sp
+
+from .LP_incremental import init_dist
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
@@ -170,7 +173,7 @@ def VerifyPDHG_withBounds(K, A, c, t, cfg, Deltas,
     return model.objVal / cfg.obj_scaling, outtime, u.X, v.X, x.X
 
 
-def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
+def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None, init_C=1e8):
     n, m = cfg.n, cfg.m
 
     n_var_shape = (K+1, n)
@@ -235,13 +238,72 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
         v_LB = v_LB.at[k].set(vC_vk_lower + vD_ukplus1_lower + vE_uk_lower + vF_x_lower)
         v_UB = v_UB.at[k].set(vC_vk_upper + vD_ukplus1_upper + vE_uk_upper + vF_x_upper)
 
-    M = 10
-    utilde_LB = jnp.clip(utilde_LB, -M, M)
-    utilde_UB = jnp.clip(utilde_UB, -M, M)
-    u_LB = jnp.clip(u_LB, 0, M)
-    u_UB = jnp.clip(u_UB, 0, M)
-    v_LB = jnp.clip(v_LB, -M, M)
-    v_UB = jnp.clip(v_UB, -M, M)
+    # if K >= 2: # does not apply to the very first step
+    log.info('-computing theory bounds-')
+    Ps = np.block([
+        [1/t * np.eye(n), -A.T],
+        [-A, 1/t * np.eye(m)]
+    ])
+
+    Ps_half = sp.linalg.sqrtm(Ps)
+    for k in range(2, K+1):
+        if cfg.pnorm == 'inf':
+            theory_bound = init_C / np.sqrt(k - 1)
+        elif cfg.pnorm == 1:
+            theory_bound = np.sqrt(n) * init_C / np.sqrt(k - 1)
+        theory_model = gp.Model()
+        theory_model.Params.OutputFlag = 0
+        z_LB = np.hstack([u_LB[k-1], v_LB[k-1]])
+        z_UB = np.hstack([u_UB[k-1], v_UB[k-1]])
+        zK = theory_model.addMVar(m + n, lb=z_LB, ub=z_UB)
+        zKplus1 = theory_model.addMVar(m + n, lb=-np.inf, ub=np.inf)
+        theory_model.addConstr(Ps_half @ (zKplus1 - zK) <= theory_bound)
+        theory_model.addConstr(Ps_half @ (zKplus1 - zK) >= -theory_bound)
+
+        for i in range(n):
+            for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+                theory_model.setObjective(zKplus1[i], sense)
+                theory_model.update()
+                theory_model.optimize()
+
+                if theory_model.status != gp.GRB.OPTIMAL:
+                    # print('bound tighting failed, GRB model status:', model.status)
+                    log.info(f'theory bound tighting failed, GRB model status: {theory_model.status}')
+                    exit(0)
+                    return None
+
+                obj = theory_model.objVal
+                if sense == gp.GRB.MAXIMIZE:
+                    u_UB = u_UB.at[k, i].set(min(u_UB[k, i], obj))
+                else:
+                    u_LB = u_LB.at[k, i].set(max(u_LB[k, i], obj))
+
+        for i in range(m):
+            for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+                theory_model.setObjective(zKplus1[n + i], sense)  # v is offset by n
+                theory_model.update()
+                theory_model.optimize()
+
+                if theory_model.status != gp.GRB.OPTIMAL:
+                    # print('bound tighting failed, GRB model status:', model.status)
+                    log.info(f'theory bound tighting failed, GRB model status: {theory_model.status}')
+                    exit(0)
+                    return None
+
+                obj = theory_model.objVal
+                if sense == gp.GRB.MAXIMIZE:
+                    v_UB = v_UB.at[k, i].set(min(v_UB[k, i], obj))
+                else:
+                    v_LB = v_LB.at[k, i].set(max(v_LB[k, i], obj))
+
+    # M = 10
+    # utilde_LB = jnp.clip(utilde_LB, -M, M)
+    # utilde_UB = jnp.clip(utilde_UB, -M, M)
+    # u_LB = jnp.clip(u_LB, 0, M)
+    # u_UB = jnp.clip(u_UB, 0, M)
+    # v_LB = jnp.clip(v_LB, -M, M)
+    # v_UB = jnp.clip(v_UB, -M, M)
+
     if basic:
         return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB
 
@@ -312,13 +374,13 @@ def BoundTight(K, A, c, t, cfg, basic=False, momentum=False, beta_func=None):
                         else:
                             v_LB = v_LB.at[kk, ii].set(max(v_LB[kk, ii], obj))
 
-    M = 10
-    utilde_LB = jnp.clip(utilde_LB, -M, M)
-    utilde_UB = jnp.clip(utilde_UB, -M, M)
-    u_LB = jnp.clip(u_LB, 0, M)
-    u_UB = jnp.clip(u_UB, 0, M)
-    v_LB = jnp.clip(v_LB, -M, M)
-    v_UB = jnp.clip(v_UB, -M, M)
+    # M = 10
+    # utilde_LB = jnp.clip(utilde_LB, -M, M)
+    # utilde_UB = jnp.clip(utilde_UB, -M, M)
+    # u_LB = jnp.clip(u_LB, 0, M)
+    # u_UB = jnp.clip(u_UB, 0, M)
+    # v_LB = jnp.clip(v_LB, -M, M)
+    # v_UB = jnp.clip(v_UB, -M, M)
 
     log.info(jnp.all(utilde_UB - utilde_LB >= -1e-8))
     log.info(jnp.all(u_UB - u_LB >= -1e-8))
@@ -419,6 +481,7 @@ def nesterov_beta_func(k):
 def LP_run(cfg, A, c, t):
     K_max = cfg.K_max
     K_min = cfg.K_min
+    m, n = A.shape
     momentum = cfg.momentum
     if cfg.beta_func == 'nesterov':
         beta_func = nesterov_beta_func
@@ -426,8 +489,12 @@ def LP_run(cfg, A, c, t):
     max_sample_resids = samples(cfg, A, c, t, momentum=momentum, beta_func=beta_func)
     log.info(max_sample_resids)
 
+    init_C = init_dist(cfg, A, c, t)
+    # init_C = 1e8
+    log.info(init_C)
+
     utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB = BoundTight(K_max, A, c, t, cfg, basic=cfg.basic_bounding,
-                                                                          momentum=momentum, beta_func=beta_func)
+                                                                          momentum=momentum, beta_func=beta_func, init_C=init_C)
 
     # log.info(u_LB)
     # log.info(u_UB)
@@ -448,9 +515,9 @@ def LP_run(cfg, A, c, t):
                                                 utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
                                                 ubar, vbar, xbar, momentum=momentum, beta_func=beta_func)
 
-        log.info(xbar)
-        log.info(ubar)
-        log.info(vbar)
+        # log.info(xbar)
+        # log.info(ubar)
+        # log.info(vbar)
         Deltas.append(delta_k)
         solvetimes.append(solvetime)
         log.info(Deltas)
@@ -467,6 +534,25 @@ def LP_run(cfg, A, c, t):
             df.to_csv(cfg.momentum_time_fname, index=False, header=False)
         else:
             df.to_csv(cfg.vanilla_time_fname, index=False, header=False)
+
+        # log.info(u_LB)
+        # log.info(u_UB)
+        # log.info(v_LB)
+        # log.info(v_UB)
+
+        # post processing
+        Dk = jnp.sum(jnp.array(Deltas))
+        for i in range(n):
+            # u_LB = u_LB.at[K, i].max(u_LB[0, i] - Dk)
+            # u_UB = u_UB.at[K, i].min(u_UB[0, i] + Dk)
+            u_LB = u_LB.at[k, i].set(max(u_LB[k, i], u_LB[0, i] - Dk))
+            u_UB = u_UB.at[k, i].set(min(u_UB[k, i], u_UB[0, i] + Dk))
+
+        for i in range(m):
+            # v_LB = v_LB.at[K, i].max(v_LB[0, i] - Dk)
+            # v_UB = v_UB.at[K, i].min(v_UB[0, i] + Dk)
+            v_LB = v_LB.at[k, i].set(max(v_LB[k, i], v_LB[0, i] - Dk))
+            v_UB = v_UB.at[k, i].set(min(v_UB[k, i], v_UB[0, i] + Dk))
 
         # plotting resids so far
         fig, ax = plt.subplots()
@@ -520,6 +606,11 @@ def LP_run(cfg, A, c, t):
     # log.info(u)
     # log.info(v)
     # log.info(resids)
+
+    # log.info(u_LB)
+    # log.info(u_UB)
+    # log.info(v_LB)
+    # log.info(v_UB)
 
 
 def random_LP_run(cfg):
