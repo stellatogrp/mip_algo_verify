@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 
-from .LP_incremental import init_dist
+# from .LP_incremental import init_dist
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
