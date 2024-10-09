@@ -1,5 +1,5 @@
-m: 5
-n: 10
+m: 3
+n: 6
 rng_seed: 0
 stepsize: .1
 momentum: False
@@ -13,18 +13,18 @@ v0:
 
 x:
   type: 'box'
-  l: 0.5
+  l: 0.75
   u: 1
 
 c:
   type: 'fixed'
 
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
-incremental: False
+incremental: True
 
 K_min: 1
 K_max: 100
-pnorm: inf
+pnorm: 1
 obj_scaling: 100
 warmstart: True
 
@@ -45,3 +45,7 @@ samples:
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv
+
+pep:
+  resid_fname: pep_resids.csv
+  time_fname: pep_times.csv

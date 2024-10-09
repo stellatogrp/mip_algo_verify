@@ -155,7 +155,7 @@ def sample_radius(cfg, A, c, t):
         v_val = -constraints[0].dual_value
         z = np.hstack([u_val, v_val])
         z0 = np.hstack([u_samples[i], v_samples[i]])
-        distances = distances.at[i].set((z - z0) @ Ps @ (z - z0))
+        distances = distances.at[i].set(np.sqrt((z - z0) @ Ps @ (z - z0)))
 
     log.info(distances)
 
@@ -221,6 +221,8 @@ def init_dist(cfg, A, c, t):
     zstar = gp.hstack([ustar, vstar])
 
     # obj = (ustar - u0) @ (ustar - u0)
+
+    # TODO: need to square root this
     obj = (zstar - z0) @ Ps @ (zstar - z0)
     model.setObjective(obj, gp.GRB.MAXIMIZE)
     model.optimize()
@@ -251,8 +253,8 @@ def init_dist(cfg, A, c, t):
     # log.info(cp_v)
 
     log.info(f'sample radius: {sample_rad}')
-    log.info(f'miqp max radius: {model.objVal}')
-    return model.objVal
+    log.info(f'miqp max radius: {np.sqrt(model.objVal)}')
+    return np.sqrt(model.objVal)
 
 
 def get_vDk_vEk(k, t, np_A, momentum=False, beta_func=None):
@@ -541,8 +543,8 @@ def LP_run(cfg, A, c, t):
     v_LB = v_LB.at[0].set(0)
     v_UB = v_UB.at[0].set(0)
 
-    # init_C = init_dist(cfg, A, c, t)
-    init_C = 1e4
+    init_C = init_dist(cfg, A, c, t)
+    # init_C = 1e4
 
     np_A = np.asarray(A)
     np_c = np.asarray(c)

@@ -3,6 +3,7 @@ import os
 import sys
 
 import hydra
+import ISTA.ISTA_incremental as ISTA_incr
 import LP.LP as LP
 import LP.LP_incremental as LP_incr
 import NNQP.NNQP as NNQP
@@ -29,15 +30,22 @@ def main_experiment_lp(cfg):
         LP.run(cfg)
 
 
+@hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
+def main_experiment_ista(cfg):
+    ISTA_incr.run(cfg)
+
+
 base_dir_map = {
     'LP': 'LP/outputs',
     'NNQP': 'NNQP/outputs',
+    'ISTA': 'ISTA/outputs',
 }
 
 
 func_driver_map = {
     'LP': main_experiment_lp,
     'NNQP': main_experiment_nnqp,
+    'ISTA': main_experiment_ista,
 }
 
 

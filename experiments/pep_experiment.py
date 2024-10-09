@@ -3,6 +3,7 @@ import os
 import sys
 
 import hydra
+import LP.LP_pep as LP_pep
 import NNQP.NNQP_pep as NNQP_pep
 
 log = logging.getLogger(__name__)
@@ -13,13 +14,20 @@ def main_experiment_nnqp(cfg):
     NNQP_pep.run(cfg)
 
 
+@hydra.main(version_base='1.2', config_path='configs/LP', config_name='lp_experiment.yaml')
+def main_experiment_lp(cfg):
+    LP_pep.run(cfg)
+
+
 base_dir_map = {
     'NNQP': 'NNQP/pep_outputs',
+    'LP': 'LP/pep_outputs',
 }
 
 
 func_driver_map = {
     'NNQP': main_experiment_nnqp,
+    'LP': main_experiment_lp,
 }
 
 

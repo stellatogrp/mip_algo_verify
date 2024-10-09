@@ -1,7 +1,18 @@
+import logging
 from time import perf_counter
 
+import matplotlib.pyplot as plt
 import numpy as np
 from gurobipy import GRB, Model, quicksum
+
+log = logging.getLogger(__name__)
+
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    # "font.sans-serif": ["Helvetica Neue"],
+    "font.size": 20,
+    "figure.figsize": (9, 6)})
 
 
 def SoftThresholding(y, lambda_t):
@@ -354,6 +365,14 @@ def MakeData(best_t=False):
     c_z = c_z.reshape(-1)
 
     return At, Bt, lambda_t, c_z, c_theta, r_theta
+
+
+def ISTA_run(cfg):
+    log.info(cfg)
+
+
+def run(cfg):
+    ISTA_run(cfg)
 
 
 if __name__ == '__main__':
