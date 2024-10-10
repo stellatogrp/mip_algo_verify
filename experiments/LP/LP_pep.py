@@ -157,6 +157,8 @@ def pep(K, R, L, t, alpha=1, theta=1):
     x0 = problem.set_initial_point()
     y0 = problem.set_initial_point()
 
+    # zs = func.stationary_point()
+
     x = [x0 for _ in range(K)]
     w = [x0 for _ in range(K + 1)]
     y = [y0 for _ in range(K + 1)]
@@ -169,7 +171,7 @@ def pep(K, R, L, t, alpha=1, theta=1):
     problem.set_initial_condition((x[0] - xs) ** 2 + (y[0] - ys) ** 2 <= R ** 2)
 
     if K == 1:
-        problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - x0) ** 2)
+        problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
     else:
         problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
     # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)

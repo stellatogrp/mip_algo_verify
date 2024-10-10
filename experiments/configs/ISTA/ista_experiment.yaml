@@ -1,11 +1,31 @@
-A_rng_seed: 3
-lambd: 10
+A_rng_seed: 0
+lambd: 1e-2
 t: 0.01
-m: 10
-n: 15
+m: 5
+n: 10
+mu: 1
+L: 100
+
+z0:
+  type: lstsq # 'lstsq' or 'zero'
+  # type: zero
+
+x:
+  seed: 1
+  type: box
+  l: 9.75
+  u: 10.25
 
 K_min: 1
-K_max: 100
+K_max: 25
 pnorm: inf
-obj_scaling: 100
+obj_scaling: 1
 warmstart: True
+
+samples:
+  z_seed_offset: 100
+  x_seed_offset: 101
+  N: 100000
+  init_dist_N: 100
+  out_fname: sample_resids.csv
+  max_out_fname: max_sample_resids.csv

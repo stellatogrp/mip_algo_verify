@@ -159,7 +159,7 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
 
     def Init_model():
         model = Model()
-        model.Params.OutputFlag = 0
+        # model.Params.OutputFlag = 0
 
         for h in range(m):
             theta[h] = model.addVar(lb=c_theta[h] - r_theta, ub=c_theta[h] + r_theta)
@@ -305,6 +305,7 @@ def IncrementalVerifierISTA(K, At, Bt, lambda_t, z_0, c_theta, r_theta):
 
     # Start iterating
     for k in range(1, K):
+        log.info(f'----K={k}----')
         y_LB, y_UB = BoundPreprocessing(n, k, At, y_LB, y_UB, z_LB, z_UB, LB_theta, UB_theta)
         y_LB, y_UB = BoundTightY(k, n, At, Bt, lambda_t, z_0, c_theta, r_theta, y_LB, y_UB, z_LB, z_UB)
 
@@ -370,6 +371,14 @@ def MakeData(best_t=False):
 def ISTA_run(cfg):
     log.info(cfg)
 
+    At, Bt, lambda_t, c_z, c_theta, r_theta = MakeData()
+    K = 100
+
+    t0 = perf_counter()
+    deltas = IncrementalVerifierISTA(K+1, At, Bt, lambda_t, c_z, c_theta, r_theta)
+    print('Elapsed time:', perf_counter() - t0)
+    print('Deltas:', deltas)
+
 
 def run(cfg):
     ISTA_run(cfg)
@@ -383,3 +392,4 @@ if __name__ == '__main__':
     deltas = IncrementalVerifierISTA(K+1, At, Bt, lambda_t, c_z, c_theta, r_theta)
     print('Elapsed time:', perf_counter() - t0)
     print('Deltas:', deltas)
+    log.info(deltas)
