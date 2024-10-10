@@ -319,19 +319,6 @@ def ISTA_verifier(cfg, A, c_z):
         result, time = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB)
         log.info(result)
 
-        # Dk = sum(delta[k] for k in delta)
-        # for i in range(n):
-        #     if z_0[i] - Dk > SoftThresholding(y_LB[i, k], lambda_t):
-        #         print('LB:', z_0[i] - Dk, SoftThresholding(y_LB[i, k], lambda_t))
-        #     if z_0[i] + Dk < SoftThresholding(y_UB[i, k], lambda_t):
-        #         print('UB:', z_0[i] + Dk, SoftThresholding(y_UB[i, k], lambda_t))
-
-        #     z_LB[i, k] = max(z_0[i] - Dk, SoftThresholding(y_LB[i, k], lambda_t))
-        #     z_UB[i, k] = min(z_0[i] + Dk, SoftThresholding(y_UB[i, k], lambda_t))
-        #     z[i, k].LB = z_LB[i, k]
-        #     z[i, k].UB = z_UB[i, k]
-        #     model.update()
-
         Deltas.append(result)
         solvetimes.append(time)
 
@@ -342,6 +329,48 @@ def ISTA_verifier(cfg, A, c_z):
             z[k][i].LB = z_LB[k, i]
             z[k][i].UB = z_UB[k, i]
         model.update()
+
+        df = pd.DataFrame(Deltas)  # remove the first column of zeros
+        df.to_csv('resids.csv', index=False, header=False)
+
+        df = pd.DataFrame(solvetimes)
+        df.to_csv('solvetimes.csv', index=False, header=False)
+
+        # plotting resids so far
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+        ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Fixed-point residual')
+        ax.set_yscale('log')
+        ax.set_title(rf'ISTA VP, $m={cfg.m}$, $n={cfg.n}$')
+
+        ax.legend()
+
+        plt.savefig('resids.pdf')
+
+        plt.clf()
+        plt.cla()
+        plt.close()
+
+        # plotting times so far
+
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
+        # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Solvetime (s)')
+        ax.set_yscale('log')
+        ax.set_title(rf'ISTA VP, $m={cfg.m}$, $n={cfg.n}$')
+
+        ax.legend()
+
+        plt.savefig('times.pdf')
+        plt.clf()
+        plt.cla()
+        plt.close()
 
 
     log.info(f'max_sample_resids: {max_sample_resids}')

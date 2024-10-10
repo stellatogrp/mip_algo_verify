@@ -3,6 +3,7 @@ import os
 import sys
 
 import hydra
+import ISTA.ISTA_pep as ISTA_pep
 import LP.LP_pep as LP_pep
 import NNQP.NNQP_pep as NNQP_pep
 
@@ -19,15 +20,22 @@ def main_experiment_lp(cfg):
     LP_pep.run(cfg)
 
 
+@hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
+def main_experiment_ista(cfg):
+    ISTA_pep.run(cfg)
+
+
 base_dir_map = {
     'NNQP': 'NNQP/pep_outputs',
     'LP': 'LP/pep_outputs',
+    'ISTA': 'ISTA/pep_outputs',
 }
 
 
 func_driver_map = {
     'NNQP': main_experiment_nnqp,
     'LP': main_experiment_lp,
+    'ISTA': main_experiment_ista,
 }
 
 

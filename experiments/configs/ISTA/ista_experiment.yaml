@@ -17,9 +17,9 @@ x:
   u: 10.25
 
 K_min: 1
-K_max: 25
+K_max: 75
 pnorm: inf
-obj_scaling: 1
+obj_scaling: 1000
 warmstart: True
 
 samples:
@@ -29,3 +29,7 @@ samples:
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv
+
+pep:
+  resid_fname: pep_resids.csv
+  time_fname: pep_times.csv
