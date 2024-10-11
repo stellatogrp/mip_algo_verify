@@ -175,13 +175,13 @@ def ISTA_verifier(cfg, A, c_z):
 
                     # Upper right part: w1 = 1, y >= lambda_t
                     # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (lambda_t + z_UB[k, i] - y_LB[k, i])*(1-w1[k, i]))  # check this
-                    # model.addConstr(y[k][i] >= lambda_t + (y_LB[k, i] - lambda_t)*(1-w1[k, i]))
-                    # model.addConstr(y[k][i] <= lambda_t + (y_UB[k, i] - lambda_t)*w1[k, i])
+                    model.addConstr(y[k][i] >= lambda_t + (y_LB[k, i] - lambda_t)*(1-w1[k, i]))
+                    model.addConstr(y[k][i] <= lambda_t + (y_UB[k, i] - lambda_t)*w1[k, i])
 
                     # Lower left part: w2 = 1, y <= -lambda_t
                     # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i] + y_UB[k, i])*(1-w2[k, i]))  # check this
-                    # model.addConstr(y[k][i] <= -lambda_t + (y_UB[k, i] + lambda_t)*(1-w2[k, i]))
-                    # model.addConstr(y[k][i] >= -lambda_t + (y_LB[k, i] + lambda_t)*w2[k, i])
+                    model.addConstr(y[k][i] <= -lambda_t + (y_UB[k, i] + lambda_t)*(1-w2[k, i]))
+                    model.addConstr(y[k][i] >= -lambda_t + (y_LB[k, i] + lambda_t)*w2[k, i])
 
                     # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (z_UB[k, i] - z_LB[k, i])*(1-w1[k, i]))  # can we just use z_UB?
                     # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i] - z_UB[k, i])*(1-w2[k, i]))  # can we just use z_LB?
@@ -211,11 +211,12 @@ def ISTA_verifier(cfg, A, c_z):
 
                     # Upper right part: w1 = 1, y >= lambda_t
                     # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (lambda_t + z_UB[k, i] - y_LB[k, i])*(1-w1[k, i]))
-                    # model.addConstr(y[k][i] >= lambda_t + (y_LB[k, i] - lambda_t)*(1-w1[k, i]))
-                    # model.addConstr(y[k][i] <= lambda_t + (y_UB[k, i] - lambda_t)*w1[k, i])
+                    model.addConstr(y[k][i] >= lambda_t + (y_LB[k, i] - lambda_t)*(1-w1[k, i]))
+                    model.addConstr(y[k][i] <= lambda_t + (y_UB[k, i] - lambda_t)*w1[k, i])
 
                     # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (z_UB[k, i])*(1-w1[k, i]))
                     model.addConstr(z[k][i] <= y[k][i] - lambda_t + (2 * lambda_t)*(1-w1[k, i]))
+                    model.addConstr(z[k][i] <= z_UB[k, i] * w1[k, i])
 
                 elif -lambda_t <= y_UB[k, i] <= lambda_t and y_LB[k, i] < -lambda_t:
                     w2[k, i] = model.addVar(vtype=GRB.BINARY)
@@ -227,11 +228,12 @@ def ISTA_verifier(cfg, A, c_z):
 
                     # Lower left part: w2 = 1, y <= -lambda_t
                     # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i] + y_UB[k, i])*(1-w2[k, i]))
-                    # model.addConstr(y[k][i] <= -lambda_t + (y_UB[k, i] + lambda_t)*(1-w2[k, i]))
-                    # model.addConstr(y[k][i] >= -lambda_t + (y_LB[k, i] + lambda_t)*w2[k, i])
+                    model.addConstr(y[k][i] <= -lambda_t + (y_UB[k, i] + lambda_t)*(1-w2[k, i]))
+                    model.addConstr(y[k][i] >= -lambda_t + (y_LB[k, i] + lambda_t)*w2[k, i])
 
                     # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i])*(1-w2[k, i]))
                     model.addConstr(z[k][i] >= y[k][i] + lambda_t + (-2 * lambda_t)*(1-w2[k, i]))
+                    model.addConstr(z[k][i] >= z_LB[k, i] * w2[k, i])
                 else:
                     raise RuntimeError('Unreachable code', y_LB[k, i], y_UB[k, i], lambda_t)
 
