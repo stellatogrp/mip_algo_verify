@@ -17,7 +17,7 @@ x:
   u: 10.25
 
 K_min: 1
-K_max: 75
+K_max: 10
 pnorm: inf
 obj_scaling: 1000
 warmstart: True
@@ -25,7 +25,7 @@ warmstart: True
 samples:
   z_seed_offset: 100
   x_seed_offset: 101
-  N: 100000
+  N: 25000
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv
