@@ -186,12 +186,17 @@ def ISTA_verifier(cfg, A, c_z):
                     # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (z_UB[k, i] - z_LB[k, i])*(1-w1[k, i]))  # can we just use z_UB?
                     # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i] - z_UB[k, i])*(1-w2[k, i]))  # can we just use z_LB?
 
-                    model.addConstr(z[k][i] <= y[k][i] - lambda_t + (z_UB[k, i])*(1-w1[k, i]))
-                    model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i])*(1-w2[k, i]))
+                    # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (z_UB[k, i])*(1-w1[k, i]))  # can use 2 lambda_t and -2lambda_t
+                    # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i])*(1-w2[k, i]))
+
+                    model.addConstr(z[k][i] <= y[k][i] - lambda_t + (2 * lambda_t)*(1-w1[k, i]))  # can use 2 lambda_t and -2lambda_t
+                    model.addConstr(z[k][i] >= y[k][i] + lambda_t + (-2 * lambda_t)*(1-w2[k, i]))
 
                     # If both binary vars are 0, then this forces z = 0
-                    model.addConstr(z[k][i] <= (z_UB[k, i])*(w1[k, i] + w2[k, i]))
-                    model.addConstr(z[k][i] >= (z_LB[k, i])*(w1[k, i] + w2[k, i]))
+                    # model.addConstr(z[k][i] <= (z_UB[k, i])*(w1[k, i] + w2[k, i]))
+                    # model.addConstr(z[k][i] >= (z_LB[k, i])*(w1[k, i] + w2[k, i]))
+                    model.addConstr(z[k][i] <= z_UB[k, i] * w1[k, i])
+                    model.addConstr(z[k][i] >= z_LB[k, i] * w2[k, i])
 
                     # The left and right part cannot be hold at the same time (improve LP relaxation)
                     model.addConstr(w1[k, i] + w2[k, i] <= 1)
@@ -208,7 +213,9 @@ def ISTA_verifier(cfg, A, c_z):
                     # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (lambda_t + z_UB[k, i] - y_LB[k, i])*(1-w1[k, i]))
                     # model.addConstr(y[k][i] >= lambda_t + (y_LB[k, i] - lambda_t)*(1-w1[k, i]))
                     # model.addConstr(y[k][i] <= lambda_t + (y_UB[k, i] - lambda_t)*w1[k, i])
-                    model.addConstr(z[k][i] <= y[k][i] - lambda_t + (z_UB[k, i])*(1-w1[k, i]))
+
+                    # model.addConstr(z[k][i] <= y[k][i] - lambda_t + (z_UB[k, i])*(1-w1[k, i]))
+                    model.addConstr(z[k][i] <= y[k][i] - lambda_t + (2 * lambda_t)*(1-w1[k, i]))
 
                 elif -lambda_t <= y_UB[k, i] <= lambda_t and y_LB[k, i] < -lambda_t:
                     w2[k, i] = model.addVar(vtype=GRB.BINARY)
@@ -222,7 +229,9 @@ def ISTA_verifier(cfg, A, c_z):
                     # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i] + y_UB[k, i])*(1-w2[k, i]))
                     # model.addConstr(y[k][i] <= -lambda_t + (y_UB[k, i] + lambda_t)*(1-w2[k, i]))
                     # model.addConstr(y[k][i] >= -lambda_t + (y_LB[k, i] + lambda_t)*w2[k, i])
-                    model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i])*(1-w2[k, i]))
+
+                    # model.addConstr(z[k][i] >= y[k][i] + lambda_t + (z_LB[k, i])*(1-w2[k, i]))
+                    model.addConstr(z[k][i] >= y[k][i] + lambda_t + (-2 * lambda_t)*(1-w2[k, i]))
                 else:
                     raise RuntimeError('Unreachable code', y_LB[k, i], y_UB[k, i], lambda_t)
 
@@ -392,6 +401,11 @@ def ISTA_verifier(cfg, A, c_z):
     log.info(f'max_sample_resids: {max_sample_resids}')
     log.info(f'Deltas: {Deltas}')
     log.info(f'times: {solvetimes}')
+
+    diffs = jnp.array(Deltas) - jnp.array(max_sample_resids)
+    log.info(f'deltas - max_sample_resids: {diffs}')
+    if jnp.any(diffs < 0):
+        log.info('error, SM > VP')
 
 
 def soft_threshold(x, gamma):
