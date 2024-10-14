@@ -1,7 +1,8 @@
-m: 3
-n: 6
+m: 7
+n: 14
 rng_seed: 0
 stepsize: .1
+rel_stepsize: 0.9
 momentum: False
 beta_func: nesterov
 
@@ -13,18 +14,39 @@ v0:
 
 x:
   type: 'box'
-  l: 0.75
-  u: 1
+  l: 5
+  u: 6
 
 c:
   type: 'fixed'
+
+problem_type: 'flow'
+# problem_type: 'random'
+
+flow:
+  n_supply: 4
+  n_demand: 2
+  p: 0.6
+  seed: 1
+  c:
+    seed: 2
+    low: 5
+    high: 10
+  x:
+    type: 'box'
+    supply_lb: 10
+    supply_ub: 10
+    demand_lb: -5
+    demand_ub: -4
+    capacity_lb: 4
+    capacity_ub: 4
 
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 incremental: True
 
 K_min: 1
-K_max: 100
-pnorm: 1
+K_max: 8
+pnorm: inf
 obj_scaling: 100
 warmstart: True
 
@@ -41,7 +63,7 @@ samples:
   u_seed_offset: 100
   v_seed_offset: 101
   x_seed_offset: 102
-  N: 25000
+  N: 10000
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv

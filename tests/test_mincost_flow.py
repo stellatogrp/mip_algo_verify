@@ -9,7 +9,7 @@ np.set_printoptions(precision=5)  # Print few decimal places
 np.set_printoptions(suppress=True)  # Suppress scientific notation
 
 
-def main():
+def test_flow():
     n_supply = 4
     n_demand = 2
     p = 0.6
@@ -67,6 +67,8 @@ def main():
     print(n_supply + n_demand + n_arcs)
     print(n_supply + 2 * n_arcs)
 
+    assert A_block.shape == (n_supply + n_demand + n_arcs, n_supply + 2 * n_arcs)
+
     n_tilde = A_block.shape[1]
     x_tilde = cp.Variable(n_tilde)
     c_tilde = np.zeros(n_tilde)
@@ -82,6 +84,8 @@ def main():
     res2 = prob.solve()
     print(res2)
     print(x_tilde.value)
+
+    assert np.abs(res - res2) <= 1e-8
 
     print('2-norm of A:', spa.linalg.norm(A_block, ord=2))
 
@@ -106,7 +110,4 @@ def main():
 
     print(xk)
     print('norm diff:', np.linalg.norm(xk - x_tilde.value))
-
-
-if __name__ == '__main__':
-    main()
+    assert np.linalg.norm(xk - x_tilde.value) <= 1e-8

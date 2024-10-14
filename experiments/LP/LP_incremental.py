@@ -5,9 +5,10 @@ import gurobipy as gp
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import pandas as pd
-import scipy as sp
+import scipy.sparse as spa
 from tqdm import trange
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
@@ -24,6 +25,12 @@ plt.rcParams.update({
 
 
 def jax_vanilla_PDHG(A, c, t, u0, v0, x, K_max, pnorm=1, momentum=False, beta_func=None):
+    # log.info(A)
+    # A = jnp.asarray(A.todense())
+    # log.info(A)
+    # exit(0)
+
+    # A = jnp.asarray(A.todense())
     m, n = A.shape
     uk_all = jnp.zeros((K_max+1, n))
     vk_all = jnp.zeros((K_max+1, m))
@@ -69,21 +76,23 @@ def interval_bound_prop(A, l, u):
 
 def samples(cfg, A, c, t, momentum=False, beta_func=None):
     sample_idx = jnp.arange(cfg.samples.N)
+    m, n = A.shape
 
     def u_sample(i):
         # if cfg.u0.type == 'zero':
         # return jnp.zeros(n)
-        return jnp.zeros(cfg.n)
+        return jnp.zeros(n)
 
     def v_sample(i):
         # if cfg.v0.type == 'zero':
         # return jnp.zeros(m)
-        return jnp.zeros(cfg.m)
+        return jnp.zeros(m)
 
+    x_LB, x_UB = get_x_LB_UB(cfg, A)
     def x_sample(i):
         key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
         # TODO add the if, start with box case only
-        return jax.random.uniform(key, shape=(cfg.m,), minval=cfg.x.l, maxval=cfg.x.u)
+        return jax.random.uniform(key, shape=(m,), minval=x_LB, maxval=x_UB)
 
     u_samples = jax.vmap(u_sample)(sample_idx)
     v_samples = jax.vmap(v_sample)(sample_idx)
@@ -110,7 +119,7 @@ def nesterov_beta_func(k):
 
 def sample_radius(cfg, A, c, t):
     sample_idx = jnp.arange(cfg.samples.init_dist_N)
-    m, n = cfg.m, cfg.n
+    m, n = A.shape
 
     # if cfg.u0.type == 'zero':
     #     u0 = jnp.zeros(n)
@@ -124,10 +133,11 @@ def sample_radius(cfg, A, c, t):
     def v_sample(i):
         return jnp.zeros(m)
 
+    x_LB, x_UB = get_x_LB_UB(cfg, A)
     def x_sample(i):
         key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
         # TODO add the if, start with box case only
-        return jax.random.uniform(key, shape=(cfg.m,), minval=cfg.x.l, maxval=cfg.x.u)
+        return jax.random.uniform(key, shape=(m,), minval=x_LB, maxval=x_UB)
 
     u_samples = jax.vmap(u_sample)(sample_idx)
     v_samples = jax.vmap(v_sample)(sample_idx)
@@ -140,7 +150,7 @@ def sample_radius(cfg, A, c, t):
 
     distances = jnp.zeros(cfg.samples.init_dist_N)
     for i in trange(cfg.samples.init_dist_N):
-        u = cp.Variable(cfg.n)
+        u = cp.Variable(n)
         x_samp = x_samples[i]
         obj = cp.Minimize(c @ u)
 
@@ -163,14 +173,15 @@ def sample_radius(cfg, A, c, t):
 
 
 def init_dist(cfg, A, c, t):
-    m, n = cfg.m, cfg.n
+    m, n = A.shape
     A = np.asarray(A)
     c = np.asarray(c)
     model = gp.Model()
 
     if cfg.x.type == 'box':
-        x_LB = cfg.x.l * np.ones(m)
-        x_UB = cfg.x.u * np.ones(m)
+        # x_LB = cfg.x.l * np.ones(m)
+        # x_UB = cfg.x.u * np.ones(m)
+        x_LB, x_UB = get_x_LB_UB(cfg, A)
 
     if cfg.u0.type == 'zero':
         u0_LB = np.zeros(n)
@@ -222,7 +233,6 @@ def init_dist(cfg, A, c, t):
 
     # obj = (ustar - u0) @ (ustar - u0)
 
-    # TODO: need to square root this
     obj = (zstar - z0) @ Ps @ (zstar - z0)
     model.setObjective(obj, gp.GRB.MAXIMIZE)
     model.optimize()
@@ -272,7 +282,7 @@ def get_vDk_vEk(k, t, np_A, momentum=False, beta_func=None):
 
 
 def BoundPreprocess(K, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, cfg, A, c, t, init_C, basic_bounding=False, beta_func=None):
-    m, n = cfg.m, cfg.n
+    m, n = A.shape
 
     vD_k, vE_k = get_vDk_vEk(K-1, t, A, momentum=cfg.momentum)
     vC = jnp.eye(m)
@@ -307,64 +317,64 @@ def BoundPreprocess(K, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
 
     # now, to tighten the interval prop bound with the theory bound
 
-    Ps = np.block([
-        [1/t * np.eye(n), -A.T],
-        [-A, 1/t * np.eye(m)]
-    ])
+    # Ps = np.block([
+    #     [1/t * np.eye(n), -A.T],
+    #     [-A, 1/t * np.eye(m)]
+    # ])
 
-    Ps_half = sp.linalg.sqrtm(Ps)
-    # log.info(Ps_half)
+    # Ps_half = sp.linalg.sqrtm(Ps)
+    # # log.info(Ps_half)
 
-    log.info('-computing theory bounds-')
-    if K >= 2: # does not apply to the very first step
-        if cfg.pnorm == 'inf':
-            theory_bound = init_C / np.sqrt(K - 1)
-        elif cfg.pnorm == 1:
-            theory_bound = np.sqrt(n) * init_C / np.sqrt(K - 1)
-        theory_model = gp.Model()
-        theory_model.Params.OutputFlag = 0
-        z_LB = np.hstack([u_LB[K-1], v_LB[K-1]])
-        z_UB = np.hstack([u_UB[K-1], v_UB[K-1]])
-        zK = theory_model.addMVar(m + n, lb=z_LB, ub=z_UB)
-        zKplus1 = theory_model.addMVar(m + n, lb=-np.inf, ub=np.inf)
-        theory_model.addConstr(Ps_half @ (zKplus1 - zK) <= theory_bound)
-        theory_model.addConstr(Ps_half @ (zKplus1 - zK) >= -theory_bound)
+    # log.info('-computing theory bounds-')
+    # if K >= 2: # does not apply to the very first step
+    #     if cfg.pnorm == 'inf':
+    #         theory_bound = init_C / np.sqrt(K - 1)
+    #     elif cfg.pnorm == 1:
+    #         theory_bound = np.sqrt(n) * init_C / np.sqrt(K - 1)
+    #     theory_model = gp.Model()
+    #     theory_model.Params.OutputFlag = 0
+    #     z_LB = np.hstack([u_LB[K-1], v_LB[K-1]])
+    #     z_UB = np.hstack([u_UB[K-1], v_UB[K-1]])
+    #     zK = theory_model.addMVar(m + n, lb=z_LB, ub=z_UB)
+    #     zKplus1 = theory_model.addMVar(m + n, lb=-np.inf, ub=np.inf)
+    #     theory_model.addConstr(Ps_half @ (zKplus1 - zK) <= theory_bound)
+    #     theory_model.addConstr(Ps_half @ (zKplus1 - zK) >= -theory_bound)
 
-        for i in range(n):
-            for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
-                theory_model.setObjective(zKplus1[i], sense)
-                theory_model.update()
-                theory_model.optimize()
+    #     for i in range(n):
+    #         for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+    #             theory_model.setObjective(zKplus1[i], sense)
+    #             theory_model.update()
+    #             theory_model.optimize()
 
-                if theory_model.status != gp.GRB.OPTIMAL:
-                    # print('bound tighting failed, GRB model status:', model.status)
-                    log.info(f'theory bound tighting failed, GRB model status: {theory_model.status}')
-                    exit(0)
-                    return None
+    #             if theory_model.status != gp.GRB.OPTIMAL:
+    #                 # print('bound tighting failed, GRB model status:', model.status)
+    #                 log.info(f'theory bound tighting failed, GRB model status: {theory_model.status}')
+    #                 exit(0)
+    #                 return None
 
-                obj = theory_model.objVal
-                if sense == gp.GRB.MAXIMIZE:
-                    u_UB = u_UB.at[K, i].set(min(u_UB[K, i], obj))
-                else:
-                    u_LB = u_LB.at[K, i].set(max(u_LB[K, i], obj))
+    #             obj = theory_model.objVal
+    #             if sense == gp.GRB.MAXIMIZE:
+    #                 u_UB = u_UB.at[K, i].set(min(u_UB[K, i], obj))
+    #             else:
+    #                 u_LB = u_LB.at[K, i].set(max(u_LB[K, i], obj))
 
-        for i in range(m):
-            for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
-                theory_model.setObjective(zKplus1[n + i], sense)  # v is offset by n
-                theory_model.update()
-                theory_model.optimize()
+    #     for i in range(m):
+    #         for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+    #             theory_model.setObjective(zKplus1[n + i], sense)  # v is offset by n
+    #             theory_model.update()
+    #             theory_model.optimize()
 
-                if theory_model.status != gp.GRB.OPTIMAL:
-                    # print('bound tighting failed, GRB model status:', model.status)
-                    log.info(f'theory bound tighting failed, GRB model status: {theory_model.status}')
-                    exit(0)
-                    return None
+    #             if theory_model.status != gp.GRB.OPTIMAL:
+    #                 # print('bound tighting failed, GRB model status:', model.status)
+    #                 log.info(f'theory bound tighting failed, GRB model status: {theory_model.status}')
+    #                 exit(0)
+    #                 return None
 
-                obj = theory_model.objVal
-                if sense == gp.GRB.MAXIMIZE:
-                    v_UB = v_UB.at[K, i].set(min(v_UB[K, i], obj))
-                else:
-                    v_LB = v_LB.at[K, i].set(max(v_LB[K, i], obj))
+    #             obj = theory_model.objVal
+    #             if sense == gp.GRB.MAXIMIZE:
+    #                 v_UB = v_UB.at[K, i].set(min(v_UB[K, i], obj))
+    #             else:
+    #                 v_LB = v_LB.at[K, i].set(max(v_LB[K, i], obj))
 
     if basic_bounding:
         return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB
@@ -508,11 +518,49 @@ def BoundPreprocess(K, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB,
     return utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB
 
 
+def get_x_LB_UB(cfg, A):
+    # TODO: change if we decide to use something other than a box
+    if cfg.problem_type == 'flow':
+        # b_tilde = np.hstack([b_supply, b_demand, u])
+
+        flow = cfg.flow
+        flow_x = flow.x
+
+        supply_lb, supply_ub = flow_x.supply_lb, flow_x.supply_ub
+        demand_lb, demand_ub = flow_x.demand_lb, flow_x.demand_ub
+        capacity_lb, capacity_ub = flow_x.capacity_lb, flow_x.capacity_ub
+
+        log.info(A.shape)
+        n_arcs = A.shape[0] - flow.n_supply - flow.n_demand
+        log.info(n_arcs)
+
+        lb = jnp.hstack([
+            supply_lb * jnp.ones(flow.n_supply),
+            demand_lb * jnp.ones(flow.n_demand),
+            capacity_lb * jnp.ones(n_arcs),
+        ])
+
+        ub = jnp.hstack([
+            supply_ub * jnp.ones(flow.n_supply),
+            demand_ub * jnp.ones(flow.n_demand),
+            capacity_ub * jnp.ones(n_arcs),
+        ])
+
+        log.info(lb)
+        log.info(ub)
+    else:
+        m = A.shape[0]
+        lb = cfg.x.l * jnp.ones(m)
+        ub = cfg.x.u * jnp.ones(m)
+
+    return lb, ub
+
+
 def LP_run(cfg, A, c, t):
     K_max = cfg.K_max
     # K_min = cfg.K_min
     momentum = cfg.momentum
-    n, m = cfg.n, cfg.m
+    m, n = A.shape
     pnorm = cfg.pnorm
 
     n_var_shape = (K_max+1, n)
@@ -532,8 +580,9 @@ def LP_run(cfg, A, c, t):
     v_UB = jnp.inf * jnp.ones(m_var_shape)
 
     if cfg.x.type == 'box':
-        x_LB = cfg.x.l * jnp.ones(m)
-        x_UB = cfg.x.u * jnp.ones(m)
+        # x_LB = cfg.x.l * jnp.ones(m)
+        # x_UB = cfg.x.u * jnp.ones(m)
+        x_LB, x_UB = get_x_LB_UB(cfg, A)
 
     # TODO: if we start not at zero, change this
     utilde_LB = utilde_LB.at[0].set(0)
@@ -609,6 +658,7 @@ def LP_run(cfg, A, c, t):
         w[K] = model.addMVar(n, vtype=gp.GRB.BINARY)
 
         vD_k, vE_k = get_vDk_vEk(K-1)
+        vD_k, vE_k = np.asarray(vD_k), np.asarray(vE_k)
         model.addConstr(v[K] == v[K-1] + vD_k @ u[K] + vE_k @ u[K-1] + t * x)
 
         utilde = u[K-1] - t * (np_c - np_A.T @ v[K-1])
@@ -758,7 +808,7 @@ def LP_run(cfg, A, c, t):
         ax.set_xlabel(r'$K$')
         ax.set_ylabel('Fixed-point residual')
         ax.set_yscale('log')
-        ax.set_title(rf'PDHG VP, $n={cfg.n}$, $m={cfg.m}$')
+        ax.set_title(rf'PDHG VP, $n={n}$, $m={m}$')
 
         ax.legend()
 
@@ -782,7 +832,7 @@ def LP_run(cfg, A, c, t):
         ax.set_xlabel(r'$K$')
         ax.set_ylabel('Solvetime (s)')
         ax.set_yscale('log')
-        ax.set_title(rf'PDHG VP, $n={cfg.n}$, $m={cfg.m}$')
+        ax.set_title(rf'PDHG VP, $n={n}$, $m={m}$')
 
         ax.legend()
 
@@ -816,9 +866,52 @@ def random_LP_run(cfg):
     key, subkey = jax.random.split(key)
     c = jax.random.uniform(subkey, shape=(n,))
 
-    t = cfg.stepsize
+    # t = cfg.stepsize
+    t = cfg.rel_stepsize / jnp.linalg.norm(A, ord=2)
     LP_run(cfg, A, c, t)
 
 
+def mincostflow_LP_run(cfg):
+    log.info(cfg)
+    flow = cfg.flow
+    n_supply, n_demand, p, seed = flow.n_supply, flow.n_demand, flow.p, flow.seed
+
+    G = nx.bipartite.random_graph(n_supply, n_demand, p, seed=seed, directed=False)
+    A = nx.linalg.graphmatrix.incidence_matrix(G, oriented=False)
+
+    n_arcs = A.shape[1]
+    A[n_supply:, :] *= -1
+
+    log.info(A.todense())
+
+    t = cfg.rel_stepsize / spa.linalg.norm(A, ord=2)
+
+    key = jax.random.PRNGKey(flow.c.seed)
+    c = jax.random.uniform(key, shape=(n_arcs,), minval=flow.c.low, maxval=flow.c.high)
+    log.info(c)
+
+    A_supply = A[:n_supply, :]
+    A_demand = A[n_supply:, :]
+
+    A_block = spa.bmat([
+        [A_supply, spa.eye(n_supply), None],
+        [A_demand, None, None],
+        [spa.eye(n_arcs), None, spa.eye(n_arcs)]
+    ])
+
+    log.info(f'overall A size: {A_block.shape}')
+
+    n_tilde = A_block.shape[1]
+    c_tilde = np.zeros(n_tilde)
+    c_tilde[:n_arcs] = c
+
+    log.info(c_tilde)
+
+    LP_run(cfg, jnp.asarray(A_block.todense()), c_tilde, t)
+
+
 def run(cfg):
-    random_LP_run(cfg)
+    if cfg.problem_type == 'flow':
+        mincostflow_LP_run(cfg)
+    else:
+        random_LP_run(cfg)
