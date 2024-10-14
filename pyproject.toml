@@ -25,7 +25,8 @@ dev = [
        "matplotlib",
        "ipdb",
        "hydra-core",
-       "pandas"
+       "pandas",
+       "networkx",
 ]
 
 [tool.setuptools_scm]
