@@ -6,8 +6,10 @@ import gurobipy as gp
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import pandas as pd
+import scipy.sparse as spa
 from PEPit import PEP
 from PEPit.functions import (
     ConvexFunction,
@@ -29,9 +31,47 @@ plt.rcParams.update({
     "figure.figsize": (9, 6)})
 
 
+def get_x_LB_UB(cfg, A):
+    # TODO: change if we decide to use something other than a box
+    if cfg.problem_type == 'flow':
+        # b_tilde = np.hstack([b_supply, b_demand, u])
+
+        flow = cfg.flow
+        flow_x = flow.x
+
+        supply_lb, supply_ub = flow_x.supply_lb, flow_x.supply_ub
+        demand_lb, demand_ub = flow_x.demand_lb, flow_x.demand_ub
+        capacity_lb, capacity_ub = flow_x.capacity_lb, flow_x.capacity_ub
+
+        log.info(A.shape)
+        n_arcs = A.shape[0] - flow.n_supply - flow.n_demand
+        log.info(n_arcs)
+
+        lb = jnp.hstack([
+            supply_lb * jnp.ones(flow.n_supply),
+            demand_lb * jnp.ones(flow.n_demand),
+            capacity_lb * jnp.ones(n_arcs),
+        ])
+
+        ub = jnp.hstack([
+            supply_ub * jnp.ones(flow.n_supply),
+            demand_ub * jnp.ones(flow.n_demand),
+            capacity_ub * jnp.ones(n_arcs),
+        ])
+
+        log.info(lb)
+        log.info(ub)
+    else:
+        m = A.shape[0]
+        lb = cfg.x.l * jnp.ones(m)
+        ub = cfg.x.u * jnp.ones(m)
+
+    return lb, ub
+
+
 def sample_radius(cfg, A, c, t):
     sample_idx = jnp.arange(cfg.samples.init_dist_N)
-    m, n = cfg.m, cfg.n
+    m, n = A.shape
 
     # if cfg.u0.type == 'zero':
     #     u0 = jnp.zeros(n)
@@ -45,10 +85,16 @@ def sample_radius(cfg, A, c, t):
     def v_sample(i):
         return jnp.zeros(m)
 
+    # def x_sample(i):
+    #     key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
+    #     # TODO add the if, start with box case only
+    #     return jax.random.uniform(key, shape=(cfg.m,), minval=cfg.x.l, maxval=cfg.x.u)
+
+    x_LB, x_UB = get_x_LB_UB(cfg, A)
     def x_sample(i):
         key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
         # TODO add the if, start with box case only
-        return jax.random.uniform(key, shape=(cfg.m,), minval=cfg.x.l, maxval=cfg.x.u)
+        return jax.random.uniform(key, shape=(m,), minval=x_LB, maxval=x_UB)
 
     u_samples = jax.vmap(u_sample)(sample_idx)
     v_samples = jax.vmap(v_sample)(sample_idx)
@@ -79,14 +125,15 @@ def sample_radius(cfg, A, c, t):
 
 
 def init_dist(cfg, A, c, t):
-    m, n = cfg.m, cfg.n
+    m, n = A.shape
     A = np.asarray(A)
     c = np.asarray(c)
     model = gp.Model()
 
     if cfg.x.type == 'box':
-        x_LB = cfg.x.l * np.ones(m)
-        x_UB = cfg.x.u * np.ones(m)
+        # x_LB = cfg.x.l * np.ones(m)
+        # x_UB = cfg.x.u * np.ones(m)
+        x_LB, x_UB = get_x_LB_UB(cfg, A)
 
     if cfg.u0.type == 'zero':
         u0_LB = np.zeros(n)
@@ -226,5 +273,47 @@ def random_LP_pep(cfg):
     LP_pep(cfg, A, c, t)
 
 
+def mincostflow_LP_pep(cfg):
+    log.info(cfg)
+    flow = cfg.flow
+    n_supply, n_demand, p, seed = flow.n_supply, flow.n_demand, flow.p, flow.seed
+
+    G = nx.bipartite.random_graph(n_supply, n_demand, p, seed=seed, directed=False)
+    A = nx.linalg.graphmatrix.incidence_matrix(G, oriented=False)
+
+    n_arcs = A.shape[1]
+    A[n_supply:, :] *= -1
+
+    log.info(A.todense())
+
+    t = cfg.rel_stepsize / spa.linalg.norm(A, ord=2)
+
+    key = jax.random.PRNGKey(flow.c.seed)
+    c = jax.random.uniform(key, shape=(n_arcs,), minval=flow.c.low, maxval=flow.c.high)
+    log.info(c)
+
+    A_supply = A[:n_supply, :]
+    A_demand = A[n_supply:, :]
+
+    A_block = spa.bmat([
+        [A_supply, spa.eye(n_supply), None],
+        [A_demand, None, None],
+        [spa.eye(n_arcs), None, spa.eye(n_arcs)]
+    ])
+
+    log.info(f'overall A size: {A_block.shape}')
+
+    n_tilde = A_block.shape[1]
+    c_tilde = np.zeros(n_tilde)
+    c_tilde[:n_arcs] = c
+
+    log.info(c_tilde)
+
+    LP_pep(cfg, jnp.asarray(A_block.todense()), c_tilde, t)
+
+
 def run(cfg):
-    random_LP_pep(cfg)
+    if cfg.problem_type == 'flow':
+        mincostflow_LP_pep(cfg)
+    else:
+        random_LP_pep(cfg)

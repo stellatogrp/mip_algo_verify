@@ -20,16 +20,24 @@ plt.rcParams.update({
 
 
 def main():
-    pep_resid_fname = 'pep_outputs/2024-10-08/12-03-57/pep_resids.csv'
-    pep_time_fname = 'pep_outputs/2024-10-08/12-03-57/pep_times.csv'
+#     pep_resid_fname = 'pep_outputs/2024-10-08/12-03-57/pep_resids.csv'
+#     pep_time_fname = 'pep_outputs/2024-10-08/12-03-57/pep_times.csv'
 
-    vp_resid_fname = 'outputs/2024-10-08/10-50-20/vanilla_resids.csv'
-    vp_time_fname = 'outputs/2024-10-08/10-50-20/vanilla_times.csv'
+#     vp_resid_fname = 'outputs/2024-10-08/10-50-20/vanilla_resids.csv'
+#     vp_time_fname = 'outputs/2024-10-08/10-50-20/vanilla_times.csv'
 
-    sample_resid_fname = 'outputs/2024-10-08/10-50-20/sample_resids.csv'
+#     sample_resid_fname = 'outputs/2024-10-08/10-50-20/sample_resids.csv'
 
-    m = 3
-    n = 6
+    pep_resid_fname = 'pep_outputs/2024-10-14/00-42-07/pep_resids.csv'
+    pep_time_fname = 'pep_outputs/2024-10-14/00-42-07/pep_times.csv'
+
+    vp_resid_fname = 'outputs/2024-10-13/22-07-27/vanilla_resids.csv'
+    vp_time_fname = 'outputs/2024-10-13/22-07-27/vanilla_times.csv'
+
+    sample_resid_fname = 'outputs/2024-10-13/22-07-27/sample_resids.csv'
+
+    m = 11
+    n = 14
     pep_resids = pd.read_csv(pep_resid_fname, header=None)
     pep_times = pd.read_csv(pep_time_fname, header=None)
     vp_resids = pd.read_csv(vp_resid_fname, header=None)
@@ -41,8 +49,8 @@ def main():
 
     fig, ax = plt.subplots()
     ax.plot(range(1, len(pep_resids[0])+1), pep_resids[0] / np.sqrt(n + m), label='Scaled PEP')
-    ax.plot(range(1, len(vp_resids[0])+1), vp_resids[0], label='VP', marker='o', markevery=10)
-    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=2, alpha=0.3)
+    ax.plot(range(1, len(vp_resids[0])+1), vp_resids[0], label='VP', marker='x')
 
     ax.set_xlabel(r'$K$')
     ax.set_ylabel('Fixed-point residual')
