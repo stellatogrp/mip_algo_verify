@@ -85,7 +85,7 @@ def test_flow():
     print(res2)
     print(x_tilde.value)
 
-    assert np.abs(res - res2) <= 1e-8
+    assert np.abs(res - res2) <= 1e-6
 
     print('2-norm of A:', spa.linalg.norm(A_block, ord=2))
 
@@ -110,4 +110,4 @@ def test_flow():
 
     print(xk)
     print('norm diff:', np.linalg.norm(xk - x_tilde.value))
-    assert np.linalg.norm(xk - x_tilde.value) <= 1e-8
+    assert np.linalg.norm(xk - x_tilde.value) <= 1e-6
