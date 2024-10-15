@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
+import scipy as sp
 import scipy.sparse as spa
 from tqdm import trange
 
@@ -103,15 +104,9 @@ def samples(cfg, A, c, t, u0, v0, momentum=False, beta_func=None):
     return max_sample_resids[1:]
 
 
-def sample_radius(cfg, A, c, t, u0, v0):
+def sample_radius(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
     sample_idx = jnp.arange(cfg.samples.init_dist_N)
     m, n = A.shape
-
-    # if cfg.u0.type == 'zero':
-    #     u0 = jnp.zeros(n)
-
-    # if cfg.v0.type == 'zero':
-    #     v0 = jnp.zeros(m)
 
     def u_sample(i):
         return u0
@@ -134,6 +129,8 @@ def sample_radius(cfg, A, c, t, u0, v0):
         [-A, 1/t * np.eye(m)]
     ])
 
+    Ps_half = sp.linalg.sqrtm(Ps)
+
     distances = jnp.zeros(cfg.samples.init_dist_N)
     for i in trange(cfg.samples.init_dist_N):
         u = cp.Variable(n)
@@ -148,11 +145,92 @@ def sample_radius(cfg, A, c, t, u0, v0):
         v_val = -constraints[0].dual_value
         z = np.hstack([u_val, v_val])
         z0 = np.hstack([u_samples[i], v_samples[i]])
-        distances = distances.at[i].set(np.sqrt((z - z0) @ Ps @ (z - z0)))
+        if C_norm == 2:
+            distances = distances.at[i].set(np.sqrt((z - z0) @ Ps @ (z - z0)))
+        elif C_norm == 1:
+            distances = distances.at[i].set(np.linalg.norm(Ps_half @ (z - z0), 1))
 
-    log.info(distances)
+    # log.info(distances)
 
     return jnp.max(distances), u_val, v_val, x_samp
+
+
+def init_dist(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
+    SM_initC, u_samp, v_samp, x_samp = sample_radius(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=C_norm)
+    log.info(f'sample max init C: {SM_initC}')
+
+    m, n = A.shape
+    A = np.asarray(A)
+    c = np.asarray(c)
+    model = gp.Model()
+
+    if cfg.x.type == 'box':
+        x_LB, x_UB = get_x_LB_UB(cfg, A)
+
+    bound_M = cfg.star_bound_M
+    ustar = model.addMVar(n, lb=0, ub=bound_M)
+    vstar = model.addMVar(m, lb=-bound_M, ub=bound_M)
+    x = model.addMVar(m, lb=x_LB, ub=x_UB)
+    u0 = model.addMVar(n, lb=u0, ub=u0)
+    v0 = model.addMVar(m, lb=v0, ub=v0)
+    w = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+    M = cfg.init_dist_M
+
+    Ps = np.block([
+        [1/t * np.eye(n), -A.T],
+        [-A, 1/t * np.eye(m)]
+    ])
+
+    Ps_half = sp.linalg.sqrtm(Ps)
+
+    ustar.Start = u_samp
+    vstar.Start = v_samp
+    x.Start = x_samp
+
+    utilde = ustar - t * (c - A.T @ vstar)
+    model.addConstr(ustar >= utilde)
+    model.addConstr(vstar == vstar - t * (A @ ustar - x))
+    for i in range(n):
+        model.addConstr(ustar[i] <= utilde[i] + M * (1 - w[i]))
+        model.addConstr(ustar[i] <= M * w[i])
+
+    # TODO: incorporate the LP based bounding component wise
+    model.addConstr(A @ ustar == x)
+    model.addConstr(-A.T @ vstar + c >= 0)
+
+    z0 = gp.hstack([u0, v0])
+    zstar = gp.hstack([ustar, vstar])
+
+    # obj = (ustar - u0) @ (ustar - u0)
+
+    if C_norm == 2:
+        obj = (zstar - z0) @ Ps @ (zstar - z0)
+        model.setObjective(obj, gp.GRB.MAXIMIZE)
+        model.optimize()
+
+        max_rad = np.sqrt(model.objVal)
+
+    elif C_norm == 1:
+        y = Ps_half @ (zstar - z0)
+        up = model.addMVar(m + n, lb=0, ub=bound_M)
+        un = model.addMVar(m + n, lb=0, ub=bound_M)
+        omega = model.addMVar(m + n, vtype=gp.GRB.BINARY)
+
+        model.addConstr(up - un == y)
+        for i in range(m + n):
+            model.addConstr(up[i] <= bound_M * omega[i])
+            model.addConstr(un[i] <= bound_M * (1-omega[i]))
+
+        model.setObjective(gp.quicksum(up + un), gp.GRB.MAXIMIZE)
+        model.optimize()
+
+        max_rad = model.objVal
+
+    log.info(f'sample max init C: {SM_initC}')
+    log.info(f'miqp max radius: {max_rad}')
+
+    return max_rad
 
 
 def nesterov_beta_func(k):
@@ -274,6 +352,82 @@ def BuildRelaxedModel(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, 
 
     model.update()
     return model, utilde, v
+
+
+def theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=False, beta_func=None):
+    log.info(f'-theory bound for k={k}-')
+    if momentum or k == 1:
+        return u_LB, u_UB, v_LB, v_UB, 0
+
+    m, n = A.shape
+
+    Ps = np.block([
+        [1/t * np.eye(n), -A.T],
+        [-A, 1/t * np.eye(m)]
+    ])
+
+    Ps_half = sp.linalg.sqrtm(Ps)
+
+    if cfg.pnorm == 'inf':
+        theory_bound = init_C / np.sqrt(k - 1)
+    elif cfg.pnorm == 1:
+        theory_bound = np.sqrt(n) * init_C / np.sqrt(k - 1)
+
+    model = gp.Model()
+    # model.Params.OutputFlag = 0
+    z_LB = np.hstack([u_LB[k-1], v_LB[k-1]])
+    z_UB = np.hstack([u_UB[k-1], v_UB[k-1]])
+    zK = model.addMVar(m + n, lb=z_LB, ub=z_UB)
+    zKplus1 = model.addMVar(m + n, lb=-np.inf, ub=np.inf)
+    model.addConstr(Ps_half @ (zKplus1 - zK) <= theory_bound)
+    model.addConstr(Ps_half @ (zKplus1 - zK) >= -theory_bound)
+
+    theory_tight_count = 0
+    for i in range(n):
+        for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+            model.setObjective(zKplus1[i], sense)
+            model.update()
+            model.optimize()
+
+            if model.status != gp.GRB.OPTIMAL:
+                # print('bound tighting failed, GRB model status:', model.status)
+                log.info(f'theory bound tighting failed, GRB model status: {model.status}')
+                exit(0)
+                return None
+
+            obj = jax.nn.relu(model.objVal)
+            if sense == gp.GRB.MAXIMIZE:
+                if obj < u_UB[k, i]:
+                    theory_tight_count += 1
+                u_UB = u_UB.at[k, i].set(min(u_UB[k, i], obj))
+            else:
+                if obj > u_LB[k, i]:
+                    theory_tight_count += 1
+                u_LB = u_LB.at[k, i].set(max(u_LB[k, i], obj))
+
+    for i in range(m):
+        for sense in [gp.GRB.MAXIMIZE, gp.GRB.MINIMIZE]:
+            model.setObjective(zKplus1[n + i], sense)  # v is offset by n
+            model.update()
+            model.optimize()
+
+            if model.status != gp.GRB.OPTIMAL:
+                # print('bound tighting failed, GRB model status:', model.status)
+                log.info(f'theory bound tighting failed, GRB model status: {model.status}')
+                exit(0)
+                return None
+
+            obj = model.objVal
+            if sense == gp.GRB.MAXIMIZE:
+                if obj < v_UB[k, i]:
+                    theory_tight_count += 1
+                v_UB = v_UB.at[k, i].set(min(v_UB[k, i], obj))
+            else:
+                if obj > v_LB[k, i]:
+                    theory_tight_count += 1
+                v_LB = v_LB.at[k, i].set(max(v_LB[k, i], obj))
+
+    return u_LB, u_UB, v_LB, v_UB, theory_tight_count / (m + n)
 
 
 def BoundTightU(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=False, beta_func=None):
@@ -438,7 +592,7 @@ def LP_run(cfg, A, c, t, u0, v0):
         model.update()
         model.optimize()
 
-        return model.objVal / cfg.obj_scaling, model.Runtime
+        return model.objVal / cfg.obj_scaling, model.Runtime, x.X
 
     log.info(cfg)
 
@@ -472,6 +626,9 @@ def LP_run(cfg, A, c, t, u0, v0):
     v_LB = v_LB.at[0].set(v0)
     v_UB = v_UB.at[0].set(v0)
 
+    init_C = init_dist(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=cfg.C_norm)
+    # init_C = 1e4
+
     # utilde, u, v = {}, {}, {}
     u, v = {}, {}
     w = {}
@@ -480,6 +637,9 @@ def LP_run(cfg, A, c, t, u0, v0):
 
     Deltas = []
     solvetimes = []
+    theory_tighter_fracs = []
+
+    x_out = jnp.zeros((K_max, m))
     for k in range(1, K_max+1):
         log.info(f'----K={k}----')
         utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB = BoundPreprocessing(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
@@ -491,6 +651,10 @@ def LP_run(cfg, A, c, t, u0, v0):
         if jnp.any(v_LB > v_UB):
             raise AssertionError('v bounds invalid after interval prop')
 
+        if cfg.theory_bounds:
+            u_LB, u_UB, v_LB, v_UB, theory_tight_frac = theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=momentum, beta_func=beta_func)
+            theory_tighter_fracs.append(theory_tight_frac)
+
         utilde_LB, utilde_UB, u_LB, u_UB = BoundTightU(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
         v_LB, v_UB = BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
 
@@ -501,7 +665,8 @@ def LP_run(cfg, A, c, t, u0, v0):
         if jnp.any(v_LB > v_UB):
             raise AssertionError('v bounds invalid after LP based bounds')
 
-        result, time = ModelNextStep(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+        result, time, xval = ModelNextStep(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+        x_out = x_out.at[k-1].set(xval)
         log.info(result)
 
         Deltas.append(result)
@@ -509,6 +674,7 @@ def LP_run(cfg, A, c, t, u0, v0):
 
         log.info(Deltas)
         log.info(solvetimes)
+        log.info(theory_tighter_fracs)
 
         Dk = jnp.sum(jnp.array(Deltas))
         for i in range(n):
@@ -536,6 +702,10 @@ def LP_run(cfg, A, c, t, u0, v0):
             df.to_csv(cfg.momentum_time_fname, index=False, header=False)
         else:
             df.to_csv(cfg.vanilla_time_fname, index=False, header=False)
+
+        if cfg.theory_bounds:
+            df = pd.DataFrame(theory_tighter_fracs)
+            df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
         # plotting resids so far
         fig, ax = plt.subplots()
@@ -582,6 +752,20 @@ def LP_run(cfg, A, c, t, u0, v0):
         plt.clf()
         plt.cla()
         plt.close()
+
+    log.info('xvals:')
+    log.info(x_out)
+
+    x_out = x_out.T
+
+    if cfg.problem_type == 'flow':
+        x_out = x_out[cfg.flow.n_supply: cfg.flow.n_supply + cfg.flow.n_demand]
+
+    plt.imshow(x_out, cmap='viridis')
+    plt.colorbar()
+
+    plt.xlabel(r'$K$')
+    plt.savefig('x_heatmap.pdf')
 
 def random_LP_run(cfg):
     log.info(cfg)

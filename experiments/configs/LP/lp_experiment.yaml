@@ -3,7 +3,7 @@ n: 14
 rng_seed: 0
 stepsize: .1
 rel_stepsize: 0.45  # needs to be under 0.5 for theory results
-momentum: True
+momentum: False
 beta_func: nesterov
 
 u0:
@@ -47,9 +47,10 @@ flow:
 
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 incremental: True
+theory_bounds: False
 
 K_min: 1
-K_max: 40
+K_max: 50
 pnorm: inf
 obj_scaling: 100
 warmstart: True
@@ -62,6 +63,8 @@ vanilla_time_fname: vanilla_times.csv
 momentum_resid_fname: momentum_resids.csv
 momentum_time_fname: momentum_times.csv
 
+C_norm: 2
+star_bound_M: 1e4
 init_dist_M: 100
 samples:
   u_seed_offset: 100
