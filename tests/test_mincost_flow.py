@@ -89,7 +89,7 @@ def test_flow():
 
     print('2-norm of A:', spa.linalg.norm(A_block, ord=2))
 
-    t = 0.9 / spa.linalg.norm(A_block, ord=2)
+    t = 0.4 / spa.linalg.norm(A_block, ord=2)
     print('t:', t)
 
     m, n = A_block.shape
@@ -111,3 +111,48 @@ def test_flow():
     print(xk)
     print('norm diff:', np.linalg.norm(xk - x_tilde.value))
     assert np.linalg.norm(xk - x_tilde.value) <= 1e-6
+
+    def beta_func(k):
+        return k / (k+3)
+
+    def get_vDk_vEk(k, A, t, momentum=True):
+        vD = -2 * t * A
+        vE = t * A
+
+        if momentum:
+            beta_k = beta_func(k)
+            vD_k = -2 * t * (1 + beta_k) * A
+            vE_k = t * (1 + 2 * beta_k) * A
+        else:
+            vD_k = vD
+            vE_k = vE
+        return vD_k, vE_k
+    print('--testing with momentum pdhg--')
+
+    xC = spa.eye(n)
+    xD = t * A_block.T
+    xE = - t * spa.eye(n)
+
+    vC = spa.eye(m)
+    # vD = -2 * t * A
+    # vE = t * A
+    vF = t * spa.eye(m)
+
+    uk = np.zeros(n)
+    vk = np.zeros(m)
+
+    for k in range(K):
+
+        vD_k, vE_k = get_vDk_vEk(k, A_block, t)
+
+        ukplus1 = np.maximum(xC @ uk + xD @ vk + xE @ c_tilde, 0)
+        vkplus1 = vC @ vk + vD_k @ ukplus1 + vE_k @ uk + vF @ b_tilde
+
+        # xk = xkplus1
+        # vk = vkplus1
+        # yk = ykplus1
+        uk = ukplus1
+        vk = vkplus1
+    print(ukplus1)
+
+    assert np.linalg.norm(uk - x_tilde.value) <= 1e-6

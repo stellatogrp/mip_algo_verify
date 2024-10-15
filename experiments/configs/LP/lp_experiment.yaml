@@ -2,8 +2,8 @@ m: 7
 n: 14
 rng_seed: 0
 stepsize: .1
-rel_stepsize: 0.9
-momentum: False
+rel_stepsize: 0.45  # needs to be under 0.5 for theory results
+momentum: True
 beta_func: nesterov
 
 u0:
@@ -32,6 +32,10 @@ flow:
     seed: 2
     low: 5
     high: 10
+  u0:
+    type: 'zero'
+  v0:
+    type: 'zero'
   x:
     type: 'box'
     supply_lb: 10

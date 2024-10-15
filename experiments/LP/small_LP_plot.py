@@ -49,8 +49,8 @@ def main():
 
     fig, ax = plt.subplots()
     ax.plot(range(1, len(pep_resids[0])+1), pep_resids[0] / np.sqrt(n + m), label='Scaled PEP')
-    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=2, alpha=0.3)
-    ax.plot(range(1, len(vp_resids[0])+1), vp_resids[0], label='VP', marker='x')
+    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+    ax.plot(range(1, len(vp_resids[0])+1), vp_resids[0], label='VP')
 
     ax.set_xlabel(r'$K$')
     ax.set_ylabel('Fixed-point residual')

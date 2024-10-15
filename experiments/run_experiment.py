@@ -7,7 +7,9 @@ import hydra
 # import ISTA.ISTA_incremental as ISTA_incr
 import ISTA.ISTA_hydra as ISTA_hydra
 import LP.LP as LP
-import LP.LP_incremental as LP_incr
+
+# import LP.LP_incremental as LP_incr
+import LP.LP_rel_incremental as LP_incr
 import NNQP.NNQP as NNQP
 import NNQP.NNQP_vec as NNQP_vec
 
