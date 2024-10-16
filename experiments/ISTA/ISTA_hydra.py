@@ -122,7 +122,7 @@ def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
     return y_LB, y_UB, z_LB, z_UB
 
 
-def ISTA_verifier(cfg, A, c_z):
+def ISTA_verifier(cfg, A, c_z, x_l, x_u):
 
     def Init_model():
         model = gp.Model()
@@ -282,7 +282,7 @@ def ISTA_verifier(cfg, A, c_z):
 
         return model.objVal / cfg.obj_scaling, model.Runtime
 
-    max_sample_resids = samples(cfg, A, c_z)
+    max_sample_resids = samples(cfg, A, c_z, x_l, x_u)
 
     pnorm = cfg.pnorm
     m, n = cfg.m, cfg.n
@@ -295,10 +295,6 @@ def ISTA_verifier(cfg, A, c_z):
     lambda_t = cfg.lambd * cfg.t
 
     K_max = cfg.K_max
-
-    if cfg.x.type == 'box':
-        x_l = cfg.x.l * jnp.ones(m)
-        x_u = cfg.x.u * jnp.ones(m)
 
     z_LB = jnp.zeros((K_max + 1, n))
     z_UB = jnp.zeros((K_max + 1, n))
@@ -374,6 +370,7 @@ def ISTA_verifier(cfg, A, c_z):
         ax.set_title(rf'ISTA VP, $m={cfg.m}$, $n={cfg.n}$')
 
         ax.legend()
+        plt.tight_layout()
 
         plt.savefig('resids.pdf')
 
@@ -442,7 +439,7 @@ def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
     return zk, resids
 
 
-def samples(cfg, A, c_z):
+def samples(cfg, A, c_z, x_l, x_u):
     n = cfg.n
     t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
@@ -457,7 +454,7 @@ def samples(cfg, A, c_z):
     def x_sample(i):
         key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
         # TODO add the if, start with box case only
-        return jax.random.uniform(key, shape=(cfg.m,), minval=cfg.x.l, maxval=cfg.x.u)
+        return jax.random.uniform(key, shape=(cfg.m,), minval=x_l, maxval=x_u)
 
     z_samples = jax.vmap(z_sample)(sample_idx)
     x_samples = jax.vmap(x_sample)(sample_idx)
@@ -502,13 +499,9 @@ def generate_data(cfg):
     return U @ diag_sigma @ VT
 
 
-def lstsq_sol(cfg, A):
+def lstsq_sol(cfg, A, x_l, x_u):
     m, n = cfg.m, cfg.n
     lambd = cfg.lambd
-
-    if cfg.x.type == 'box':
-        x_l = cfg.x.l
-        x_u = cfg.x.u
 
     key = jax.random.PRNGKey(cfg.x.seed)
     x_samp = jax.random.uniform(key, shape=(m,), minval=x_l, maxval=x_u)
@@ -529,25 +522,100 @@ def lstsq_sol(cfg, A):
 
 
 def random_ISTA_run(cfg):
-    n = cfg.n
+    m, n = cfg.m, cfg.n
     log.info(cfg)
 
     A = generate_data(cfg)
     A_eigs = jnp.real(jnp.linalg.eigvals(A.T @ A))
     log.info(f'eigenvalues of ATA: {A_eigs}')
 
-    z_lstsq = lstsq_sol(cfg, A)
+    if cfg.x.type == 'box':
+        x_l = cfg.x.l * jnp.ones(m)
+        x_u = cfg.x.u * jnp.ones(m)
 
     if cfg.z0.type == 'lstsq':
-        c_z = z_lstsq
+        c_z = lstsq_sol(cfg, A, x_l, x_u)
     elif cfg.z0.type == 'zero':
         c_z = jnp.zeros(n)
 
     lambda_t = cfg.lambd * cfg.t
     log.info(f'lambda * t: {lambda_t}')
 
-    ISTA_verifier(cfg, A, c_z)
+    ISTA_verifier(cfg, A, c_z, x_l, x_u)
+
+
+def sparse_coding_A(cfg):
+    m, n = cfg.m, cfg.n
+    key = jax.random.PRNGKey(cfg.A_rng_seed)
+
+    key, subkey = jax.random.split(key)
+    A = 1 / m * jax.random.normal(subkey, shape=(m, n))
+
+    A_mask = jax.random.bernoulli(key, p=cfg.x_star.A_mask_prob, shape=(m-1, n)).astype(jnp.float64)
+
+    masked_A = jnp.multiply(A[1:], A_mask)
+
+    A = A.at[1:].set(masked_A)
+    return A / jnp.linalg.norm(A, axis=0)
+
+
+def sparse_coding_b_set(cfg, A):
+    m, n = A.shape
+
+    key = jax.random.PRNGKey(cfg.x_star.rng_seed)
+
+    key, subkey = jax.random.split(key)
+    x_star_set = jax.random.normal(subkey, shape=(n, cfg.x_star.num))
+
+    key, subkey = jax.random.split(key)
+    x_star_mask = jax.random.bernoulli(subkey, p=cfg.x_star.nonzero_prob, shape=(n, cfg.x_star.num))
+
+    x_star = jnp.multiply(x_star_set, x_star_mask)
+    # log.info(x_star)
+
+    epsilon = cfg.x_star.epsilon_std * jax.random.normal(key, shape=(m, cfg.x_star.num))
+
+    b_set = A @ x_star + epsilon
+
+    # log.info(A @ x_star)
+    # log.info(b_set)
+
+    return b_set
+
+
+def sparse_coding_ISTA_run(cfg):
+    # m, n = cfg.m, cfg.n
+    n = cfg.n
+    log.info(cfg)
+
+    A = sparse_coding_A(cfg)
+
+    log.info(A)
+
+    A_eigs = jnp.real(jnp.linalg.eigvals(A.T @ A))
+    log.info(f'eigenvalues of ATA: {A_eigs}')
+
+    # log.info(A)
+    # log.info(jnp.linalg.norm(A, axis=0))
+
+    # x_star_set = sparse_coding_x_star(cfg, A)
+    b_set = sparse_coding_b_set(cfg, A)
+
+    x_l = jnp.min(b_set, axis=1)
+    x_u = jnp.max(b_set, axis=1)
+
+    log.info(f'size of x set: {x_u - x_l}')
+
+    if cfg.z0.type == 'lstsq':
+        c_z = lstsq_sol(cfg, A, x_l, x_u)
+    elif cfg.z0.type == 'zero':
+        c_z = jnp.zeros(n)
+
+    ISTA_verifier(cfg, A, c_z, x_l, x_u)
 
 
 def run(cfg):
-    random_ISTA_run(cfg)
+    if cfg.problem_type == 'random':
+        random_ISTA_run(cfg)
+    elif cfg.problem_type == 'sparse_coding':
+        sparse_coding_ISTA_run(cfg)

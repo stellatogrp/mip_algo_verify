@@ -6,6 +6,16 @@ n: 10
 mu: 1
 L: 5
 
+x_star:
+  rng_seed: 1
+  nonzero_prob: 0.025
+  num: 100
+  epsilon_std: 1e-2
+  A_mask_prob: 1.
+
+# problem_type: 'random'
+problem_type: 'sparse_coding'
+
 z0:
   type: lstsq # 'lstsq' or 'zero'
   # type: zero
@@ -17,7 +27,7 @@ x:
   u: 10.5
 
 K_min: 1
-K_max: 25
+K_max: 20
 pnorm: inf
 obj_scaling: 1000
 warmstart: True
