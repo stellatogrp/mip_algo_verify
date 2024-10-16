@@ -827,12 +827,44 @@ def mincostflow_LP_run(cfg):
     log.info(c_tilde)
 
     m, n = A_block.shape
-    if flow.u0.type == 'zero':
-        # u0 = jnp.zeros(n)
-        u0 = jnp.ones(n)  # TODO change back to zeros when done testing
+    if flow.u0.type == 'high_demand':
+        # x, _ = get_x_LB_UB(cfg, A_block)  # use the lower bound
+        supply_lb = flow.x.supply_lb
+        demand_lb = flow.x.demand_lb  # demand in our convention is negative so use the lower bound
+        capacity_ub = flow.x.capacity_ub
 
-    if flow.v0.type == 'zero':
-        v0 = jnp.zeros(m)
+        b_tilde = jnp.hstack([
+            supply_lb * jnp.ones(flow.n_supply),
+            demand_lb * jnp.ones(flow.n_demand),
+            capacity_ub * jnp.ones(n_arcs),
+        ])
+        log.info(f'hardest x to satisfy: {b_tilde}')
+
+        x_tilde = cp.Variable(n)
+
+        constraints = [A_block @ x_tilde == b_tilde, x_tilde >= 0]
+
+        prob = cp.Problem(cp.Minimize(c_tilde.T @ x_tilde), constraints)
+        res = prob.solve()
+        log.info(res)
+
+        if res == np.inf:
+            log.info('the problem in the family with lowest supply and highest demand is infeasible')
+            exit(0)
+
+        u0 = x_tilde.value
+        v0 = -constraints[0].dual_value
+
+        log.info(f'u0: {u0}')
+        log.info(f'v0: {v0}')
+
+    else:
+        if flow.u0.type == 'zero':
+            u0 = jnp.zeros(n)
+            # u0 = jnp.ones(n)  # TODO change back to zeros when done testing
+
+        if flow.v0.type == 'zero':
+            v0 = jnp.zeros(m)
 
     LP_run(cfg, jnp.asarray(A_block.todense()), c_tilde, t, u0, v0)
 

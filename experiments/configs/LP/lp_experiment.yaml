@@ -33,15 +33,17 @@ flow:
     low: 5
     high: 10
   u0:
-    type: 'zero'
+    # type: 'zero'
+    type: 'high_demand'
   v0:
-    type: 'zero'
+    # type: 'zero'
+    type: 'high_demand'
   x:
     type: 'box'
     supply_lb: 10
     supply_ub: 10
-    demand_lb: -5
-    demand_ub: -4
+    demand_lb: -7
+    demand_ub: -2
     capacity_lb: 4
     capacity_ub: 4
 
@@ -50,7 +52,7 @@ incremental: True
 theory_bounds: False
 
 K_min: 1
-K_max: 50
+K_max: 30
 pnorm: inf
 obj_scaling: 100
 warmstart: True
