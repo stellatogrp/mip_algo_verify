@@ -1,3 +1,4 @@
+import copy
 import logging
 
 import cvxpy as cp
@@ -351,7 +352,7 @@ def BuildRelaxedModel(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, 
                 model.addConstr(u[k, i] >= 0)
 
     model.update()
-    return model, utilde, v
+    return model, utilde, u, v
 
 
 def theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=False, beta_func=None):
@@ -430,12 +431,171 @@ def theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=False
     return u_LB, u_UB, v_LB, v_UB, theory_tight_count / (m + n)
 
 
-def BoundTightU(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=False, beta_func=None):
-    log.info(f'-LP based bounds for k = {k} on u-')
-    model, utilde, _ = BuildRelaxedModel(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+def compute_lI(w, x, b, Lhat, Uhat, I, Icomp):
+    if I.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Uhat)) + b
+    if Icomp.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Lhat)) + b
+
+    w_I = w[I]
+    w_Icomp = w[Icomp]
+
+    Lhat_I = Lhat[I]
+    Uhat_I = Uhat[Icomp]
+
+    return jnp.sum(jnp.multiply(w_I, Lhat_I)) + jnp.sum(jnp.multiply(w_Icomp, Uhat_I)) + b
+
+
+def compute_v(wi, xi, b, Lhat, Uhat):
+    idx = jnp.arange(wi.shape[0])
+    # log.info(idx)
+
+    filtered_idx = jnp.array([j for j in idx if wi[j] != 0 and jnp.abs(Uhat[j] - Lhat[j]) > 1e-7])
+    # log.info(filtered_idx)
+
+    def key_func(j):
+        return (xi[j] - Lhat[j]) / (Uhat[j] - Lhat[j])
+
+    keys = jnp.array([key_func(j) for j in filtered_idx])
+    # log.info(keys)
+    sorted_idx = jnp.argsort(keys)
+    filtered_idx = filtered_idx[sorted_idx]
+
+    # log.info(filtered_idx)
+
+    I = jnp.array([])
+    Icomp = set(range(wi.shape[0]))
+
+    # log.info(Icomp)
+
+    lI = compute_lI(wi, xi, b, Lhat, Uhat, I, jnp.array(list(Icomp)))
+    log.info(f'original lI: {lI}')
+    if lI < 0:
+        return None, None, None, None
+
+    # for h in filtered_idx:
+    #     Itest = jnp.append(I, h)
+    #     Icomp.remove(int(h))
+
+    #     lI = compute_lI(wi, xi, b, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp)))  # TODO: check lI calc, needs to be calced before adding h
+    #     # log.info(lI)  # the returned lI needs to be nonnegative
+    #     if lI < 0:
+    #         Iint = I.astype(jnp.integer)
+    #         log.info(f'h={h}')
+    #         rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
+    #         return Iint, rhs, lI, int(h)
+    #         break  # TODO: add what happens if loop breaks by reaching end of array
+
+    #     I = Itest
+    for h in filtered_idx:
+        Itest = jnp.append(I, h)
+        Icomp_test = copy.copy(Icomp)
+        Icomp_test.remove(int(h))
+
+        log.info(Itest)
+        log.info(Icomp_test)
+
+        lI_new = compute_lI(wi, xi, b, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp_test)))
+        log.info(lI_new)
+        if lI_new < 0:
+            Iint = I.astype(jnp.integer)
+            log.info(f'h={h}')
+            log.info(f'lI before and after: {lI}, {lI_new}')
+            rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
+            return Iint, rhs, lI, int(h)
+
+        I = Itest
+        Icomp = Icomp_test
+        lI = lI_new
+    else:
+        return None, None, None, None
+
+
+def add_conv_cuts(cfg, k, i, sense, A, c, t, u_LB, u_UB, v_LB, v_UB, u, v, u_out):
+    log.info(f'(k,i) = {(k, i)}')
+    log.info(f'sense={sense}')
+    m, n = A.shape
+    L_hat = jnp.zeros((m + n))
+    U_hat = jnp.zeros((m + n))
+
+    ukminus1_LB = u_LB[k-1]
+    ukminus1_UB = u_UB[k-1]
+    vkminus1_LB = v_LB[k-1]
+    vkminus1_UB = v_UB[k-1]
+
+    Ci = jnp.eye(n)[i]
+    Di = t * A.T[i]
+    minustci = -t * c[i]
+
+    # xi = jnp.hstack([u.X[k-1], v.X[k-1]])
+
+    xi = jnp.hstack([u, v])
+    wi = jnp.hstack([Ci, Di])
+
+    for j in range(n):
+        if Ci[j] >= 0:
+            L_hat = L_hat.at[j].set(ukminus1_LB[j])
+            U_hat = U_hat.at[j].set(ukminus1_UB[j])
+        else:
+            L_hat = L_hat.at[j].set(ukminus1_UB[j])
+            U_hat = U_hat.at[j].set(ukminus1_LB[j])
+
+    for j in range(m):
+        if Di[j] >= 0:
+            L_hat = L_hat.at[n + j].set(vkminus1_LB[j])
+            U_hat = U_hat.at[n + j].set(vkminus1_UB[j])
+        else:
+            L_hat = L_hat.at[n + j].set(vkminus1_UB[j])
+            U_hat = U_hat.at[n + j].set(vkminus1_LB[j])
+
+    Iint, rhs, lI, h = compute_v(wi, xi, minustci, L_hat, U_hat)
+
+    if Iint is None:
+        return None, None, None, None, None
+
+    log.info(f'rhs:{rhs}')
+    # log.info(f'lhs:{u.X[k, i]}')
+    log.info(f'lhs:{u_out[i]}')
+    log.info(f'lI: {lI}')
+    # lhs = u.X[k, i]
+    lhs = u_out[i]
+    if lhs > rhs + 1e-6:
+        log.info('found a violated cut')
+        log.info(f'with lI = {lI}')
+        log.info(f'and I = {Iint}')
+        # exit(0)
+
+    if lhs > rhs:
+        return Iint, lI, h, L_hat, U_hat
+    else:
+        return None, None, None, None, None
+
+
+def create_new_constr(A, k, i, t, Iint, lI, h, u, v, Lhat, Uhat):
     n = A.shape[1]
+    Ci = jnp.eye(n)[i]
+    Di = t * A.T[i]
+
+    w = jnp.hstack([Ci, Di])
+    x = gp.hstack([u[k-1], v[k-1]])
+
+    new_constr = 0
+    for idx in Iint:
+        new_constr += w[idx] * (x[idx] - Lhat[idx])
+    new_constr += lI / (Uhat[h] - Lhat[h]) * (x[h] - Lhat[h])
+
+    # return u[k, i] <= new_constr
+    return u[k][i] <= new_constr
+
+
+def BoundTightU(cfg, k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=False, beta_func=None):
+    log.info(f'-LP based bounds for k = {k} on u-')
+    model, utilde, u, v = BuildRelaxedModel(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+    m, n = A.shape
+
     for sense in [gp.GRB.MINIMIZE, gp.GRB.MAXIMIZE]:
         for i in range(n):
+
             model.setObjective(utilde[k, i], sense)
             model.update()
             model.optimize()
@@ -445,10 +605,31 @@ def BoundTightU(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, 
                 exit(0)
                 return None
 
+            # if cfg.exact_conv_relax and k == 6 and sense == -1:
+            old_objval = model.objVal
+            if cfg.exact_conv_relax.use_in_bounds:
+                if utilde_UB[k, i] > 0 and utilde_LB[k, i] < 0:
+                    Iint, lI, h, Lhat, Uhat = add_conv_cuts(cfg, k, i, sense, A, c, t, u_LB, u_UB, v_LB, v_UB, u[k-1].X, v[k-1].X, u[k].X)
+                    if Iint is not None:
+                        log.info(Iint)
+                        log.info(h)
+                        log.info(lI)
+                        new_constr = create_new_constr(A, k, i, t, Iint, lI, h, u, v, Lhat, Uhat)
+                        model.addConstr(new_constr)
+                        model.update()
+                        model.optimize()
+                        new_objval = model.objVal
+                        log.info(f'sense={sense}')
+                        log.info(f'old_objval: {old_objval}')
+                        log.info(f'new_objval: {new_objval}')
+                        if jnp.abs(new_objval - old_objval) >= 1e-6:
+                            log.info('large change')
+                            exit(0)
+
             if sense == gp.GRB.MAXIMIZE:
-                utilde_UB = utilde_UB.at[k, i].set(model.objVal)
+                utilde_UB = utilde_UB.at[k, i].set(old_objval)
             else:
-                utilde_LB = utilde_LB.at[k, i].set(model.objVal)
+                utilde_LB = utilde_LB.at[k, i].set(old_objval)
 
             if utilde_LB[k, i] > utilde_UB[k, i]:
                 raise ValueError('Infeasible bounds', sense, i, k, utilde_LB[k, i], utilde_UB[k, i])
@@ -460,7 +641,7 @@ def BoundTightU(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, 
 
 def BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=False, beta_func=None):
     log.info(f'-LP based bounds for k = {k} on v-')
-    model, _, v = BuildRelaxedModel(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+    model, _, _, v = BuildRelaxedModel(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
     m = A.shape[0]
 
     for sense in [gp.GRB.MINIMIZE, gp.GRB.MAXIMIZE]:
@@ -479,7 +660,7 @@ def BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, 
             else:
                 v_LB = v_LB.at[k, i].set(model.objVal)
 
-            if v_LB[k, i] > v_UB[k, i]:
+            if v_LB[k, i] > v_UB[k, i] + 1e-6:
                 raise ValueError('Infeasible bounds', sense, i, k, v_LB[k, i], v_UB[k, i])
 
     return v_LB, v_UB
@@ -590,6 +771,36 @@ def LP_run(cfg, A, c, t, u0, v0):
                 model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
         model.update()
+        if cfg.exact_conv_relax.use_in_l1_rel:
+            rel_model = model.relax()
+            rel_model.optimize()
+            rel_u = np.array([])
+            rel_v = np.array([])
+
+            rel_u_out = np.array([])
+
+            for var in u[k-1]:
+                # log.info(var.VarName)
+                # log.info(var.VarName.item())
+                rel_u = np.append(rel_u, rel_model.getVarByName(var.VarName.item()).X)
+
+            for var in u[k]:
+                rel_u_out = np.append(rel_u_out, rel_model.getVarByName(var.VarName.item()).X)
+
+            for var in v[k-1]:
+                rel_v = np.append(rel_v, rel_model.getVarByName(var.VarName.item()).X)
+
+            log.info(rel_u)
+            log.info(rel_v)
+
+            for i in range(n):
+                # log.info(f'(k, i): {(k, i)}')
+                sense = 1
+                Iint, lI, h, L_hat, U_hat = add_conv_cuts(cfg, k, i, sense, A, c, t, u_LB, u_UB, v_LB, v_UB, rel_u, rel_v, rel_u_out)
+
+                if Iint is not None:
+                    log.info('new constraint added')
+                    model.addConstr(create_new_constr(A, k, i, t, Iint, lI, h, u, v, L_hat, U_hat))
         model.optimize()
 
         return model.objVal / cfg.obj_scaling, model.Runtime, x.X
@@ -655,7 +866,7 @@ def LP_run(cfg, A, c, t, u0, v0):
             u_LB, u_UB, v_LB, v_UB, theory_tight_frac = theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=momentum, beta_func=beta_func)
             theory_tighter_fracs.append(theory_tight_frac)
 
-        utilde_LB, utilde_UB, u_LB, u_UB = BoundTightU(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+        utilde_LB, utilde_UB, u_LB, u_UB = BoundTightU(cfg, k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
         v_LB, v_UB = BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
 
         if jnp.any(utilde_LB > utilde_UB):
@@ -804,6 +1015,7 @@ def mincostflow_LP_run(cfg):
     log.info(A.todense())
 
     t = cfg.rel_stepsize / spa.linalg.norm(A, ord=2)
+    log.info(f'using t={t}')
 
     key = jax.random.PRNGKey(flow.c.seed)
     c = jax.random.uniform(key, shape=(n_arcs,), minval=flow.c.low, maxval=flow.c.high)
