@@ -65,24 +65,18 @@ NNQP_params = [
     ['n=40', 'two_step=False', 'one_step=True'],
 ]
 
-# LP_params = [
-#     ['x.l=0', 'momentum=True'],
-#     ['x.l=0', 'momentum=False'],
-#     ['x.l=0.25', 'momentum=True'],
-#     ['x.l=0.25', 'momentum=False'],
-#     ['x.l=0.5', 'momentum=True'],
-#     ['x.l=0.5', 'momentum=False'],
-#     ['x.l=0.75', 'momentum=True'],
-#     ['x.l=0.75', 'momentum=False'],
-# ]
-
 LP_params = [
-    ['x.l=0.75', 'incremental=True'],
-    ['x.l=0.75', 'incremental=False'],
-    ['x.l=0.75', 'incremental=True', 'm=10', 'n=20', 'K_max=75'],
-    ['x.l=0.75', 'incremental=False', 'm=10', 'n=20', 'K_max=75'],
+    ['x.demand_lb=-6', 'momentum=False'],
+    ['x.demand_lb=-6', 'momentum=True'],
+    ['x.demand_lb=-5', 'momentum=False'],
+    ['x.demand_lb=-5', 'momentum=True'],
+    ['x.demand_lb=-4', 'momentum=False'],
+    ['x.demand_lb=-4', 'momentum=True'],
+    ['x.demand_lb=-3', 'momentum=False'],
+    ['x.demand_lb=-3', 'momentum=True'],
+    ['x.demand_lb=-2', 'momentum=False'],
+    ['x.demand_lb=-2', 'momentum=True'],
 ]
-
 
 def main():
     if len(sys.argv) < 3:

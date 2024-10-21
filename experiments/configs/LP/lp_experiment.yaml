@@ -24,8 +24,8 @@ problem_type: 'flow'
 # problem_type: 'random'
 
 flow:
-  n_supply: 6
-  n_demand: 3
+  n_supply: 10
+  n_demand: 5
   p: 0.5
   seed: 1
   c:
@@ -52,9 +52,9 @@ incremental: True
 theory_bounds: False
 
 K_min: 1
-K_max: 40
+K_max: 100
 pnorm: inf
-obj_scaling: 100
+obj_scaling: 1000
 warmstart: True
 
 callback: True

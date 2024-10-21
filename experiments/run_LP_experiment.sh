@@ -2,10 +2,10 @@
 #SBATCH --job-name=LP
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem-per-cpu=4G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem-per-cpu=2G
 #SBATCH --time=23:59:59
-#SBATCH --array=0-3
+#SBATCH --array=0-9
 #SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/LP/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=vranjan@princeton.edu
