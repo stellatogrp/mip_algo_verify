@@ -20,8 +20,8 @@ x:
 c:
   type: 'fixed'
 
-# problem_type: 'flow'
-problem_type: 'random'
+problem_type: 'flow'
+# problem_type: 'random'
 
 flow:
   n_supply: 6
@@ -59,7 +59,7 @@ warmstart: True
 
 callback: True
 exact_conv_relax:
-  use_in_bounds: False
+  use_in_bounds: False  # this does not do anything useful, should always be false
   num_cuts: 1
   use_in_l1_rel: True
 

@@ -879,6 +879,7 @@ def LP_run(cfg, A, c, t, u0, v0):
         result, time, xval = ModelNextStep(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
         x_out = x_out.at[k-1].set(xval)
         log.info(result)
+        log.info(xval)
 
         Deltas.append(result)
         solvetimes.append(time)
@@ -964,19 +965,26 @@ def LP_run(cfg, A, c, t, u0, v0):
         plt.cla()
         plt.close()
 
-    log.info('xvals:')
-    log.info(x_out)
+        # log.info('xvals:')
+        # log.info(x_out)
 
-    x_out = x_out.T
+        x_out_plot = x_out.T
 
-    if cfg.problem_type == 'flow':
-        x_out = x_out[cfg.flow.n_supply: cfg.flow.n_supply + cfg.flow.n_demand]
+        if cfg.problem_type == 'flow':
+            x_out_plot = x_out_plot[cfg.flow.n_supply: cfg.flow.n_supply + cfg.flow.n_demand]
 
-    plt.imshow(x_out, cmap='viridis')
-    plt.colorbar()
+        plt.imshow(x_out_plot, cmap='viridis')
+        plt.colorbar()
 
-    plt.xlabel(r'$K$')
-    plt.savefig('x_heatmap.pdf')
+        plt.xlabel(r'$K$')
+        plt.savefig('x_heatmap.pdf')
+
+        df = pd.DataFrame(x_out_plot)
+        df.to_csv('x_heatmap.csv', index=False, header=False)
+
+        plt.clf()
+        plt.cla()
+        plt.close()
 
 def random_LP_run(cfg):
     log.info(cfg)
