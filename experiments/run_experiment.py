@@ -66,16 +66,16 @@ NNQP_params = [
 ]
 
 LP_params = [
-    ['flow.x.demand_lb=-6', 'momentum=False'],
-    ['flow.x.demand_lb=-6', 'momentum=True'],
-    ['flow.x.demand_lb=-5', 'momentum=False'],
-    ['flow.x.demand_lb=-5', 'momentum=True'],
-    ['flow.x.demand_lb=-4', 'momentum=False'],
-    ['flow.x.demand_lb=-4', 'momentum=True'],
-    ['flow.x.demand_lb=-3', 'momentum=False'],
-    ['flow.x.demand_lb=-3', 'momentum=True'],
-    ['flow.x.demand_lb=-2', 'momentum=False'],
-    ['flow.x.demand_lb=-2', 'momentum=True'],
+    ['flow.x.demand_ub=-6', 'momentum=False'],
+    ['flow.x.demand_ub=-6', 'momentum=True'],
+    ['flow.x.demand_ub=-5', 'momentum=False'],
+    ['flow.x.demand_ub=-5', 'momentum=True'],
+    ['flow.x.demand_ub=-4', 'momentum=False'],
+    ['flow.x.demand_ub=-4', 'momentum=True'],
+    ['flow.x.demand_ub=-3', 'momentum=False'],
+    ['flow.x.demand_ub=-3', 'momentum=True'],
+    ['flow.x.demand_ub=-2', 'momentum=False'],
+    ['flow.x.demand_ub=-2', 'momentum=True'],
 ]
 
 def main():
