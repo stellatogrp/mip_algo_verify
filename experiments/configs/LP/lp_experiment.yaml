@@ -43,7 +43,7 @@ flow:
     supply_lb: 10
     supply_ub: 10
     demand_lb: -7
-    demand_ub: -6
+    demand_ub: -2
     capacity_lb: 4
     capacity_ub: 4
 
@@ -52,7 +52,7 @@ incremental: True
 theory_bounds: False
 
 K_min: 1
-K_max: 100
+K_max: 12
 pnorm: inf
 obj_scaling: 1000
 warmstart: True
@@ -61,7 +61,7 @@ callback: True
 exact_conv_relax:
   use_in_bounds: False  # this does not do anything useful, should always be false
   num_cuts: 1
-  use_in_l1_rel: True
+  use_in_l1_rel: False
 
 vanilla_resid_fname: vanilla_resids.csv
 vanilla_time_fname: vanilla_times.csv

@@ -1,41 +1,45 @@
 A_rng_seed: 0
-lambd: 1e-1
-t: 0.1
-m: 5
-n: 10
+lambd: 1e1
+t: 0.04
+t_rel: 0.5
+m: 10
+n: 15
 mu: 1
 L: 5
 
 x_star:
   rng_seed: 1
-  nonzero_prob: 0.025
+  nonzero_prob: 0.1
   num: 100
   epsilon_std: 1e-2
   A_mask_prob: 1.
 
-# problem_type: 'random'
-problem_type: 'sparse_coding'
+problem_type: 'random'
+# problem_type: 'sparse_coding'
 
 z0:
-  type: lstsq # 'lstsq' or 'zero'
-  # type: zero
+  # type: lstsq # 'lstsq' or 'zero'
+  type: zero
 
 x:
   seed: 1
   type: box
-  l: 9.5
-  u: 10.5
+  l: 9.75
+  u: 10.25
 
 K_min: 1
-K_max: 20
+K_max: 50
 pnorm: inf
 obj_scaling: 1000
 warmstart: True
 
+exact_conv_relax:
+  use_in_l1_rel: False
+
 samples:
   z_seed_offset: 100
   x_seed_offset: 101
-  N: 25000
+  N: 10000
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv

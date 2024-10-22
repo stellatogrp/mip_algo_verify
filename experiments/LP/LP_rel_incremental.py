@@ -771,9 +771,11 @@ def LP_run(cfg, A, c, t, u0, v0):
                 model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
         model.update()
+        # log.info(u_omega)
         if cfg.exact_conv_relax.use_in_l1_rel:
             rel_model = model.relax()
             rel_model.optimize()
+            log.info(f'relaxed obj val at {k}: {rel_model.objVal}')
             rel_u = np.array([])
             rel_v = np.array([])
 

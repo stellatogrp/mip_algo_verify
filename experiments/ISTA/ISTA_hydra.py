@@ -95,6 +95,10 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB
     return model, y
 
 
+def add_pos_conv_cuts(cfg, k, i, At, Bt, z_LB, z_UB, z, z_out):
+    pass
+
+
 def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
     model, y = BuildRelaxedModel(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
     n = At.shape[0]
@@ -122,7 +126,7 @@ def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
     return y_LB, y_UB, z_LB, z_UB
 
 
-def ISTA_verifier(cfg, A, c_z, x_l, x_u):
+def ISTA_verifier(cfg, A, t, c_z, x_l, x_u):
 
     def Init_model():
         model = gp.Model()
@@ -278,15 +282,42 @@ def ISTA_verifier(cfg, A, c_z, x_l, x_u):
             model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
 
         model.update()
+        if cfg.exact_conv_relax.use_in_l1_rel:
+            rel_model = model.relax()
+            rel_model.optimize()
+
+            rel_z = np.array([])
+            rel_x = np.array([])
+
+            rel_z_out = np.array([])
+
+            for var in z[k-1]:
+                rel_z = np.append(rel_z, rel_model.getVarByName(var.VarName.item()).X)
+
+            for var in z[k]:
+                rel_z_out = np.append(rel_z_out, rel_model.getVarByName(var.VarName.item()).X)
+
+            for var in x:
+                rel_x = np.append(rel_x, rel_model.getVarByName(var.VarName.item()).X)
+
+            log.info(rel_z)
+            log.info(rel_x)
+            log.info(rel_z_out)
+
+            for i in range(n):
+                # Iint, lI, h, L_hat, U_hat = add_conv_cuts(cfg, k, i, sense, A, c, t, u_LB, u_UB, v_LB, v_UB, rel_u, rel_v, rel_u_out)
+                if rel_z_out[i] > 0:
+                    add_pos_conv_cuts(cfg, k, i, At, Bt, z_LB, z_UB, rel_z, rel_z_out)
+            exit(0)
         model.optimize()
 
-        return model.objVal / cfg.obj_scaling, model.Runtime
+        return model.objVal / cfg.obj_scaling, model.Runtime, x.X
 
-    max_sample_resids = samples(cfg, A, c_z, x_l, x_u)
+    max_sample_resids = samples(cfg, A, t, c_z, x_l, x_u)
 
     pnorm = cfg.pnorm
     m, n = cfg.m, cfg.n
-    t = cfg.t
+    # t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
 
@@ -324,6 +355,7 @@ def ISTA_verifier(cfg, A, c_z, x_l, x_u):
 
     Deltas = []
     solvetimes = []
+    x_out = jnp.zeros((K_max, m))
     for k in range(1, K_max+1):
         log.info(f'----K={k}----')
         yk_LB, yk_UB = BoundPreprocessing(k, At, y_LB, y_UB, z_LB, z_UB, Btx_LB, Btx_UB)
@@ -339,8 +371,10 @@ def ISTA_verifier(cfg, A, c_z, x_l, x_u):
         if jnp.any(z_LB > z_UB):
             raise AssertionError('z bounds invalid after bound tight y + softthresholded')
 
-        result, time = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB)
+        result, time, xval = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB)
+        x_out = x_out.at[k-1].set(xval)
         log.info(result)
+        log.info(xval)
 
         Deltas.append(result)
         solvetimes.append(time)
@@ -396,6 +430,20 @@ def ISTA_verifier(cfg, A, c_z, x_l, x_u):
         plt.cla()
         plt.close()
 
+        x_out_plot = x_out.T
+
+        plt.imshow(x_out_plot, cmap='viridis')
+        plt.colorbar()
+
+        plt.xlabel(r'$K$')
+        plt.savefig('x_heatmap.pdf')
+
+        df = pd.DataFrame(x_out_plot)
+        df.to_csv('x_heatmap.csv', index=False, header=False)
+
+        plt.clf()
+        plt.cla()
+        plt.close()
 
     log.info(f'max_sample_resids: {max_sample_resids}')
     log.info(f'Deltas: {Deltas}')
@@ -439,9 +487,9 @@ def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
     return zk, resids
 
 
-def samples(cfg, A, c_z, x_l, x_u):
+def samples(cfg, A, t, c_z, x_l, x_u):
     n = cfg.n
-    t = cfg.t
+    # t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
     lambda_t = cfg.lambd * cfg.t
@@ -529,6 +577,13 @@ def random_ISTA_run(cfg):
     A_eigs = jnp.real(jnp.linalg.eigvals(A.T @ A))
     log.info(f'eigenvalues of ATA: {A_eigs}')
 
+    # L = jnp.max(A_eigs)
+    # t = cfg.t_rel / L
+
+    t = cfg.t
+
+    log.info(f't={t}')
+
     if cfg.x.type == 'box':
         x_l = cfg.x.l * jnp.ones(m)
         x_u = cfg.x.u * jnp.ones(m)
@@ -541,7 +596,7 @@ def random_ISTA_run(cfg):
     lambda_t = cfg.lambd * cfg.t
     log.info(f'lambda * t: {lambda_t}')
 
-    ISTA_verifier(cfg, A, c_z, x_l, x_u)
+    ISTA_verifier(cfg, A, t, c_z, x_l, x_u)
 
 
 def sparse_coding_A(cfg):
@@ -595,6 +650,11 @@ def sparse_coding_ISTA_run(cfg):
     A_eigs = jnp.real(jnp.linalg.eigvals(A.T @ A))
     log.info(f'eigenvalues of ATA: {A_eigs}')
 
+    L = jnp.max(A_eigs)
+    t = cfg.t_rel / L
+
+    log.info(f't={t}')
+
     # log.info(A)
     # log.info(jnp.linalg.norm(A, axis=0))
 
@@ -611,7 +671,7 @@ def sparse_coding_ISTA_run(cfg):
     elif cfg.z0.type == 'zero':
         c_z = jnp.zeros(n)
 
-    ISTA_verifier(cfg, A, c_z, x_l, x_u)
+    ISTA_verifier(cfg, A, t, c_z, x_l, x_u)
 
 
 def run(cfg):
