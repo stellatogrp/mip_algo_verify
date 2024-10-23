@@ -126,7 +126,7 @@ def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
     return y_LB, y_UB, z_LB, z_UB
 
 
-def ISTA_verifier(cfg, A, t, c_z, x_l, x_u):
+def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
     def Init_model():
         model = gp.Model()
@@ -313,7 +313,7 @@ def ISTA_verifier(cfg, A, t, c_z, x_l, x_u):
 
         return model.objVal / cfg.obj_scaling, model.Runtime, x.X
 
-    max_sample_resids = samples(cfg, A, t, c_z, x_l, x_u)
+    max_sample_resids = samples(cfg, A, lambd, t, c_z, x_l, x_u)
 
     pnorm = cfg.pnorm
     m, n = cfg.m, cfg.n
@@ -323,7 +323,7 @@ def ISTA_verifier(cfg, A, t, c_z, x_l, x_u):
 
     At = np.asarray(At)
     Bt = np.asarray(Bt)
-    lambda_t = cfg.lambd * cfg.t
+    lambda_t = lambd * cfg.t
 
     K_max = cfg.K_max
 
@@ -487,12 +487,12 @@ def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
     return zk, resids
 
 
-def samples(cfg, A, t, c_z, x_l, x_u):
+def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     n = cfg.n
     # t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
-    lambda_t = cfg.lambd * cfg.t
+    lambda_t = lambd * cfg.t
 
     sample_idx = jnp.arange(cfg.samples.N)
 
@@ -547,9 +547,8 @@ def generate_data(cfg):
     return U @ diag_sigma @ VT
 
 
-def lstsq_sol(cfg, A, x_l, x_u):
+def lstsq_sol(cfg, A, lambd, x_l, x_u):
     m, n = cfg.m, cfg.n
-    lambd = cfg.lambd
 
     key = jax.random.PRNGKey(cfg.x.seed)
     x_samp = jax.random.uniform(key, shape=(m,), minval=x_l, maxval=x_u)
@@ -588,15 +587,21 @@ def random_ISTA_run(cfg):
         x_l = cfg.x.l * jnp.ones(m)
         x_u = cfg.x.u * jnp.ones(m)
 
+    if cfg.lambd.val == 'adaptive':
+        center = x_u - x_l
+        lambd = cfg.lambd.scalar * jnp.max(jnp.abs(A.T @ center))
+    else:
+        lambd = cfg.lambd.val
+    log.info(f'lambda: {lambd}')
+    lambda_t = lambd * cfg.t
+    log.info(f'lambda * t: {lambda_t}')
+
     if cfg.z0.type == 'lstsq':
-        c_z = lstsq_sol(cfg, A, x_l, x_u)
+        c_z = lstsq_sol(cfg, A, lambd, x_l, x_u)
     elif cfg.z0.type == 'zero':
         c_z = jnp.zeros(n)
 
-    lambda_t = cfg.lambd * cfg.t
-    log.info(f'lambda * t: {lambda_t}')
-
-    ISTA_verifier(cfg, A, t, c_z, x_l, x_u)
+    ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
 
 
 def sparse_coding_A(cfg):
@@ -651,9 +656,6 @@ def sparse_coding_ISTA_run(cfg):
     log.info(f'eigenvalues of ATA: {A_eigs}')
 
     L = jnp.max(A_eigs)
-    t = cfg.t_rel / L
-
-    log.info(f't={t}')
 
     # log.info(A)
     # log.info(jnp.linalg.norm(A, axis=0))
@@ -666,12 +668,24 @@ def sparse_coding_ISTA_run(cfg):
 
     log.info(f'size of x set: {x_u - x_l}')
 
+    t = cfg.t_rel / L
+
+    if cfg.lambd.val == 'adaptive':
+        center = x_u - x_l
+        lambd = cfg.lambd.scalar * jnp.max(jnp.abs(A.T @ center))
+    else:
+        lambd = cfg.lambd.val
+
+    log.info(f't={t}')
+    log.info(f'lambda = {lambd}')
+    log.info(f'lambda * t = {lambd * t}')
+
     if cfg.z0.type == 'lstsq':
-        c_z = lstsq_sol(cfg, A, x_l, x_u)
+        c_z = lstsq_sol(cfg, A, lambd, x_l, x_u)
     elif cfg.z0.type == 'zero':
         c_z = jnp.zeros(n)
 
-    ISTA_verifier(cfg, A, t, c_z, x_l, x_u)
+    ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
 
 
 def run(cfg):

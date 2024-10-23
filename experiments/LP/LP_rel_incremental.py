@@ -565,7 +565,7 @@ def add_conv_cuts(cfg, k, i, sense, A, c, t, u_LB, u_UB, v_LB, v_UB, u, v, u_out
         log.info(f'and I = {Iint}')
         # exit(0)
 
-    if lhs > rhs:
+    if lhs > rhs + 1e-6:
         return Iint, lI, h, L_hat, U_hat
     else:
         return None, None, None, None, None

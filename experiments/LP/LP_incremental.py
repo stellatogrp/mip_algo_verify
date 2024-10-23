@@ -431,146 +431,6 @@ def theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=False
     return u_LB, u_UB, v_LB, v_UB, theory_tight_count / (m + n)
 
 
-def compute_lI(w, x, b, Lhat, Uhat, I, Icomp):
-    if I.shape[0] == 0:
-        return jnp.sum(jnp.multiply(w, Uhat)) + b
-    if Icomp.shape[0] == 0:
-        return jnp.sum(jnp.multiply(w, Lhat)) + b
-
-    w_I = w[I]
-    w_Icomp = w[Icomp]
-
-    Lhat_I = Lhat[I]
-    Uhat_I = Uhat[Icomp]
-
-    return jnp.sum(jnp.multiply(w_I, Lhat_I)) + jnp.sum(jnp.multiply(w_Icomp, Uhat_I)) + b
-
-
-def compute_v(wi, xi, b, Lhat, Uhat):
-    idx = jnp.arange(wi.shape[0])
-    # log.info(idx)
-
-    filtered_idx = jnp.array([j for j in idx if wi[j] != 0 and jnp.abs(Uhat[j] - Lhat[j]) > 1e-7])
-    # log.info(filtered_idx)
-
-    def key_func(j):
-        return (xi[j] - Lhat[j]) / (Uhat[j] - Lhat[j])
-
-    keys = jnp.array([key_func(j) for j in filtered_idx])
-    # log.info(keys)
-    sorted_idx = jnp.argsort(keys)
-    filtered_idx = filtered_idx[sorted_idx]
-
-    # log.info(filtered_idx)
-
-    I = jnp.array([])
-    Icomp = set(range(wi.shape[0]))
-
-    # log.info(Icomp)
-
-    lI = compute_lI(wi, xi, b, Lhat, Uhat, I, jnp.array(list(Icomp)))
-    log.info(f'original lI: {lI}')
-    if lI < 0:
-        return None, None, None, None
-
-    # for h in filtered_idx:
-    #     Itest = jnp.append(I, h)
-    #     Icomp.remove(int(h))
-
-    #     lI = compute_lI(wi, xi, b, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp)))  # TODO: check lI calc, needs to be calced before adding h
-    #     # log.info(lI)  # the returned lI needs to be nonnegative
-    #     if lI < 0:
-    #         Iint = I.astype(jnp.integer)
-    #         log.info(f'h={h}')
-    #         rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
-    #         return Iint, rhs, lI, int(h)
-    #         break  # TODO: add what happens if loop breaks by reaching end of array
-
-    #     I = Itest
-    for h in filtered_idx:
-        Itest = jnp.append(I, h)
-        Icomp_test = copy.copy(Icomp)
-        Icomp_test.remove(int(h))
-
-        log.info(Itest)
-        log.info(Icomp_test)
-
-        lI_new = compute_lI(wi, xi, b, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp_test)))
-        log.info(lI_new)
-        if lI_new < 0:
-            Iint = I.astype(jnp.integer)
-            log.info(f'h={h}')
-            log.info(f'lI before and after: {lI}, {lI_new}')
-            rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
-            return Iint, rhs, lI, int(h)
-
-        I = Itest
-        Icomp = Icomp_test
-        lI = lI_new
-    else:
-        return None, None, None, None
-
-
-def add_conv_cuts(cfg, k, i, sense, A, c, t, u_LB, u_UB, v_LB, v_UB, u, v, u_out):
-    log.info(f'(k,i) = {(k, i)}')
-    log.info(f'sense={sense}')
-    m, n = A.shape
-    L_hat = jnp.zeros((m + n))
-    U_hat = jnp.zeros((m + n))
-
-    ukminus1_LB = u_LB[k-1]
-    ukminus1_UB = u_UB[k-1]
-    vkminus1_LB = v_LB[k-1]
-    vkminus1_UB = v_UB[k-1]
-
-    Ci = jnp.eye(n)[i]
-    Di = t * A.T[i]
-    minustci = -t * c[i]
-
-    # xi = jnp.hstack([u.X[k-1], v.X[k-1]])
-
-    xi = jnp.hstack([u, v])
-    wi = jnp.hstack([Ci, Di])
-
-    for j in range(n):
-        if Ci[j] >= 0:
-            L_hat = L_hat.at[j].set(ukminus1_LB[j])
-            U_hat = U_hat.at[j].set(ukminus1_UB[j])
-        else:
-            L_hat = L_hat.at[j].set(ukminus1_UB[j])
-            U_hat = U_hat.at[j].set(ukminus1_LB[j])
-
-    for j in range(m):
-        if Di[j] >= 0:
-            L_hat = L_hat.at[n + j].set(vkminus1_LB[j])
-            U_hat = U_hat.at[n + j].set(vkminus1_UB[j])
-        else:
-            L_hat = L_hat.at[n + j].set(vkminus1_UB[j])
-            U_hat = U_hat.at[n + j].set(vkminus1_LB[j])
-
-    Iint, rhs, lI, h = compute_v(wi, xi, minustci, L_hat, U_hat)
-
-    if Iint is None:
-        return None, None, None, None, None
-
-    log.info(f'rhs:{rhs}')
-    # log.info(f'lhs:{u.X[k, i]}')
-    log.info(f'lhs:{u_out[i]}')
-    log.info(f'lI: {lI}')
-    # lhs = u.X[k, i]
-    lhs = u_out[i]
-    if lhs > rhs + 1e-6:
-        log.info('found a violated cut')
-        log.info(f'with lI = {lI}')
-        log.info(f'and I = {Iint}')
-        # exit(0)
-
-    if lhs > rhs:
-        return Iint, lI, h, L_hat, U_hat
-    else:
-        return None, None, None, None, None
-
-
 def create_new_constr(A, k, i, t, Iint, lI, h, u, v, Lhat, Uhat):
     n = A.shape[1]
     Ci = jnp.eye(n)[i]
@@ -664,6 +524,140 @@ def BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, 
                 raise ValueError('Infeasible bounds', sense, i, k, v_LB[k, i], v_UB[k, i])
 
     return v_LB, v_UB
+
+
+def compute_lI(w, x, b, Lhat, Uhat, I, Icomp):
+    if I.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Uhat)) + b
+    if Icomp.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Lhat)) + b
+
+    w_I = w[I]
+    w_Icomp = w[Icomp]
+
+    Lhat_I = Lhat[I]
+    Uhat_I = Uhat[Icomp]
+
+    return jnp.sum(jnp.multiply(w_I, Lhat_I)) + jnp.sum(jnp.multiply(w_Icomp, Uhat_I)) + b
+
+
+def compute_v(wi, xi, b, Lhat, Uhat):
+    idx = jnp.arange(wi.shape[0])
+    # log.info(idx)
+
+    filtered_idx = jnp.array([j for j in idx if wi[j] != 0 and jnp.abs(Uhat[j] - Lhat[j]) > 1e-7])
+    # log.info(filtered_idx)
+
+    def key_func(j):
+        return (xi[j] - Lhat[j]) / (Uhat[j] - Lhat[j])
+
+    keys = jnp.array([key_func(j) for j in filtered_idx])
+    # log.info(keys)
+    sorted_idx = jnp.argsort(keys)
+    filtered_idx = filtered_idx[sorted_idx]
+
+    # log.info(filtered_idx)
+
+    I = jnp.array([])
+    Icomp = set(range(wi.shape[0]))
+
+    # log.info(Icomp)
+
+    lI = compute_lI(wi, xi, b, Lhat, Uhat, I, jnp.array(list(Icomp)))
+    # log.info(f'original lI: {lI}')
+    if lI < 0:
+        return None, None, None, None
+
+    # for h in filtered_idx:
+    #     Itest = jnp.append(I, h)
+    #     Icomp.remove(int(h))
+
+    #     lI = compute_lI(wi, xi, b, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp)))  # TODO: check lI calc, needs to be calced before adding h
+    #     # log.info(lI)  # the returned lI needs to be nonnegative
+    #     if lI < 0:
+    #         Iint = I.astype(jnp.integer)
+    #         log.info(f'h={h}')
+    #         rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
+    #         return Iint, rhs, lI, int(h)
+    #         break  # TODO: add what happens if loop breaks by reaching end of array
+
+    #     I = Itest
+    for h in filtered_idx:
+        Itest = jnp.append(I, h)
+        Icomp_test = copy.copy(Icomp)
+        Icomp_test.remove(int(h))
+
+        # log.info(Itest)
+        # log.info(Icomp_test)
+
+        lI_new = compute_lI(wi, xi, b, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp_test)))
+        # log.info(lI_new)
+        if lI_new < 0:
+            Iint = I.astype(jnp.integer)
+            # log.info(f'h={h}')
+            # log.info(f'lI before and after: {lI}, {lI_new}')
+            rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
+            return Iint, rhs, lI, int(h)
+
+        I = Itest
+        Icomp = Icomp_test
+        lI = lI_new
+    else:
+        return None, None, None, None
+
+
+def add_conv_cuts(cfg, k, i, A, c, t, u_LB, u_UB, v_LB, v_UB, rel_u, rel_v):
+    m, n = A.shape
+    L_hat = jnp.zeros((m + n))
+    U_hat = jnp.zeros((m + n))
+
+    ukminus1_LB = u_LB[k-1]
+    ukminus1_UB = u_UB[k-1]
+    vkminus1_LB = v_LB[k-1]
+    vkminus1_UB = v_UB[k-1]
+
+    Ci = jnp.eye(n)[i]
+    Di = t * A.T[i]
+    minustci = -t * c[i]
+
+    xi = jnp.hstack([rel_u[k-1], rel_v[k-1]])
+    wi = jnp.hstack([Ci, Di])
+
+    for j in range(n):
+        if Ci[j] >= 0:
+            L_hat = L_hat.at[j].set(ukminus1_LB[j])
+            U_hat = U_hat.at[j].set(ukminus1_UB[j])
+        else:
+            L_hat = L_hat.at[j].set(ukminus1_UB[j])
+            U_hat = U_hat.at[j].set(ukminus1_LB[j])
+
+    for j in range(m):
+        if Di[j] >= 0:
+            L_hat = L_hat.at[n + j].set(vkminus1_LB[j])
+            U_hat = U_hat.at[n + j].set(vkminus1_UB[j])
+        else:
+            L_hat = L_hat.at[n + j].set(vkminus1_UB[j])
+            U_hat = U_hat.at[n + j].set(vkminus1_LB[j])
+
+    Iint, rhs, lI, h = compute_v(wi, xi, minustci, L_hat, U_hat)
+
+    if Iint is None:
+        return None, None, None, None, None
+
+    lhs = rel_u[k, i]
+
+    if lhs > rhs + 1e-6:
+        log.info(f'found a violated cut at {(k, i)}')
+        log.info(f'with lI = {lI}')
+        log.info(f'and I = {Iint}')
+        log.info(f'h={h}')
+        log.info(f'lhs: {lhs}')
+        log.info(f'rhs: {rhs}')
+
+    if lhs > rhs + 1e-6:
+        return Iint, lI, h, L_hat, U_hat
+    else:
+        return None, None, None, None, None
 
 
 def model_and_solve(cfg, K_max, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=False, beta_func=None, u_val=None, v_val=None):
@@ -768,6 +762,32 @@ def model_and_solve(cfg, K_max, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB,
     if u_val is not None:
         u[:K_max].Start = u_val
         v[:K_max].Start = v_val
+
+    model.update()
+
+    if cfg.exact_conv_relax.use_in_l1_rel:
+        rel_model = model.relax()
+        rel_model.optimize()
+        log.info(f'relaxed obj val at {k}: {rel_model.objVal}')
+        rel_u = jnp.zeros((K_max + 1, n))
+        rel_v = jnp.zeros((K_max + 1, m))
+        for kk in range(K_max + 1):
+            for i in range(n):
+                rel_u = rel_u.at[kk, i].set(rel_model.getVarByName(u[kk, i].VarName.item()).X)
+            for j in range(m):
+                rel_v = rel_v.at[kk, j].set(rel_model.getVarByName(v[kk, j].VarName.item()).X)
+
+        for kk in range(1, K_max + 1):
+            log.info(f'computing conv cuts with k={kk}')
+            for i in range(n):
+                if (kk, i) in w:
+                    Iint, lI, h, L_hat, U_hat = add_conv_cuts(cfg, kk, i, A, c, t, u_LB, u_UB, v_LB, v_UB, rel_u, rel_v)
+
+                    if Iint is not None:
+                        log.info('new constraint added')
+                        model.addConstr(create_new_constr(A, kk, i, t, Iint, lI, h, u, v, L_hat, U_hat))
+
+        # exit(0)
 
     model.optimize()
 
