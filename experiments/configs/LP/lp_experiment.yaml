@@ -52,7 +52,7 @@ incremental: True
 theory_bounds: False
 
 K_min: 1
-K_max: 20
+K_max: 100
 pnorm: inf
 obj_scaling: 1000
 warmstart: True

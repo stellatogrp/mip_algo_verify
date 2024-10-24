@@ -2,8 +2,8 @@
 #SBATCH --job-name=LP
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --mem-per-cpu=2G
+#SBATCH --cpus-per-task=28
+#SBATCH --mem-per-cpu=3G
 #SBATCH --time=23:59:59
 #SBATCH --array=0-9
 #SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/LP/runs/%A.txt
