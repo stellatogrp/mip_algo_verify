@@ -169,7 +169,7 @@ def add_pos_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, z, x,
 
     zkminus1_LB = z_LB[k-1]
     zkminus1_UB = z_UB[k-1]
-    
+
     Ati = At[i]
     Bti = Bt[i]
 
