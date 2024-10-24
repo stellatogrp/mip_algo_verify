@@ -80,8 +80,8 @@ LP_params = [
 
 ISTA_params = [
     ['m=5', 'n=10'],
-    ['m=10', 'n=20'],
     ['m=10', 'n=5'],
+    ['m=10', 'n=20'],
     ['m=20', 'n=10'],
 ]
 
@@ -120,6 +120,9 @@ def main():
 
         if experiment == 'LP':
             hydra_tags += LP_params[job_idx]
+
+        if experiment == 'ISTA':
+            hydra_tags += ISTA_params[job_idx]
 
     sys.argv = [sys.argv[0]] + hydra_tags
 
