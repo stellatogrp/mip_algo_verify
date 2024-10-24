@@ -1,3 +1,4 @@
+import copy
 import logging
 
 import cvxpy as cp
@@ -95,8 +96,140 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB
     return model, y
 
 
-def add_pos_conv_cuts(cfg, k, i, At, Bt, z_LB, z_UB, z, z_out):
-    pass
+def compute_lI(w, x, lambda_t, Lhat, Uhat, I, Icomp):
+    if I.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Uhat)) + lambda_t
+    if Icomp.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Lhat)) + lambda_t
+
+    w_I = w[I]
+    w_Icomp = w[Icomp]
+
+    Lhat_I = Lhat[I]
+    Uhat_I = Uhat[Icomp]
+
+    return jnp.sum(jnp.multiply(w_I, Lhat_I)) + jnp.sum(jnp.multiply(w_Icomp, Uhat_I)) + lambda_t
+
+
+def compute_v_pos(wi, xi, lambda_t, Lhat, Uhat):
+    idx = jnp.arange(wi.shape[0])
+    # log.info(idx)
+
+    filtered_idx = jnp.array([j for j in idx if wi[j] != 0 and jnp.abs(Uhat[j] - Lhat[j]) > 1e-7])
+    # log.info(filtered_idx)
+
+    def key_func(j):
+        return (xi[j] - Lhat[j]) / (Uhat[j] - Lhat[j])
+
+    keys = jnp.array([key_func(j) for j in filtered_idx])
+    # log.info(keys)
+    sorted_idx = jnp.argsort(keys)
+    filtered_idx = filtered_idx[sorted_idx]
+
+    # log.info(filtered_idx)
+
+    I = jnp.array([])
+    Icomp = set(range(wi.shape[0]))
+
+    # log.info(Icomp)
+
+    lI = compute_lI(wi, xi, lambda_t, Lhat, Uhat, I, jnp.array(list(Icomp)))
+    # log.info(f'original lI: {lI}')
+    if lI < 0:
+        return None, None, None, None
+
+    for h in filtered_idx:
+        Itest = jnp.append(I, h)
+        Icomp_test = copy.copy(Icomp)
+        Icomp_test.remove(int(h))
+
+        # log.info(Itest)
+        # log.info(Icomp_test)
+
+        lI_new = compute_lI(wi, xi, lambda_t, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp_test)))
+        # log.info(lI_new)
+        if lI_new < 0:
+            Iint = I.astype(jnp.integer)
+            # log.info(f'h={h}')
+            # log.info(f'lI before and after: {lI}, {lI_new}')
+            rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
+            return Iint, rhs, lI, int(h)
+
+        I = Itest
+        Icomp = Icomp_test
+        lI = lI_new
+    else:
+        return None, None, None, None
+
+
+def add_pos_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, z, x, z_out):
+    n, m = Bt.shape
+    L_hat = jnp.zeros((m + n))
+    U_hat = jnp.zeros((m + n))
+
+    zkminus1_LB = z_LB[k-1]
+    zkminus1_UB = z_UB[k-1]
+    
+    Ati = At[i]
+    Bti = Bt[i]
+
+    xi = jnp.hstack([z, x])
+    wi = jnp.hstack([Ati, Bti])
+
+    for j in range(n):
+        if Ati[j] >= 0:
+            L_hat = L_hat.at[j].set(zkminus1_LB[j])
+            U_hat = U_hat.at[j].set(zkminus1_UB[j])
+        else:
+            L_hat = L_hat.at[j].set(zkminus1_UB[j])
+            U_hat = U_hat.at[j].set(zkminus1_LB[j])
+
+    for j in range(m):
+        if Bti[j] >= 0:
+            L_hat = L_hat.at[n + j].set(x_LB[j])
+            U_hat = U_hat.at[n + j].set(x_UB[j])
+        else:
+            L_hat = L_hat.at[n + j].set(x_UB[j])
+            U_hat = U_hat.at[n + j].set(x_LB[j])
+
+    # log.info(L_hat)
+
+    Iint, rhs, lI, h = compute_v_pos(wi, xi, lambda_t, L_hat, U_hat)
+
+    if Iint is None:
+        return None, None, None, None, None
+
+    # log.info(f'rhs:{rhs}')
+    # log.info(f'lhs:{u.X[k, i]}')
+    # log.info(f'lhs:{z_out[i]}')
+    # log.info(f'lI: {lI}')
+    # lhs = u.X[k, i]
+    lhs = z_out[i]
+    if lhs > rhs + 1e-6:
+        log.info('found a violated cut')
+        log.info(f'with lI = {lI}')
+        log.info(f'and I = {Iint}')
+        # exit(0)
+
+    if lhs > rhs + 1e-6:
+        return Iint, lI, h, L_hat, U_hat
+    else:
+        return None, None, None, None, None
+
+
+def create_new_pos_constr(cfg, k, i, At, Bt, lambda_t, Iint, lI, h, z, x, Lhat, Uhat):
+    Ati = At[i]
+    Bti = Bt[i]
+
+    zx_stack = gp.hstack([z[k-1], x])
+    w = jnp.hstack([Ati, Bti])
+
+    new_constr = 0
+    for idx in Iint:
+        new_constr += w[idx] * (zx_stack[idx] - Lhat[idx])
+    new_constr += (lI + lambda_t) / (Uhat[h] - Lhat[h]) * (zx_stack[h] - Lhat[h])
+
+    return z[k][i] <= new_constr
 
 
 def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
@@ -300,14 +433,19 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             for var in x:
                 rel_x = np.append(rel_x, rel_model.getVarByName(var.VarName.item()).X)
 
-            log.info(rel_z)
-            log.info(rel_x)
-            log.info(rel_z_out)
 
             for i in range(n):
-                # Iint, lI, h, L_hat, U_hat = add_conv_cuts(cfg, k, i, sense, A, c, t, u_LB, u_UB, v_LB, v_UB, rel_u, rel_v, rel_u_out)
+                log.info('--computing conv cuts--')
+
                 if rel_z_out[i] > 0:
-                    add_pos_conv_cuts(cfg, k, i, At, Bt, z_LB, z_UB, rel_z, rel_z_out)
+                    Iint, lI, h, L_hat, U_hat = add_pos_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, rel_z, rel_x, rel_z_out)
+
+                    if Iint is not None:
+                        log.info(f'new constraint added with {(k, i)}')
+                        model.addConstr(create_new_pos_constr(cfg, k, i, At, Bt, lambda_t, Iint, lI, h, z, x, L_hat, U_hat))
+
+                if rel_z_out[i] < 0:
+                    pass
             exit(0)
         model.optimize()
 
@@ -334,6 +472,8 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
     z_LB = z_LB.at[0].set(c_z)
     z_UB = z_UB.at[0].set(c_z)
+    x_LB = x_l
+    x_UB = x_u
 
     Btx_UB, Btx_LB = interval_bound_prop(Bt, x_l, x_u)
     if jnp.any(Btx_UB < Btx_LB):

@@ -78,6 +78,13 @@ LP_params = [
     ['flow.x.demand_ub=-2', 'momentum=True'],
 ]
 
+ISTA_params = [
+    ['m=5', 'n=10'],
+    ['m=10', 'n=20'],
+    ['m=10', 'n=5'],
+    ['m=20', 'n=10'],
+]
+
 def main():
     if len(sys.argv) < 3:
         print('not enough command line arguments')
