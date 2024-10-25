@@ -528,7 +528,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         model.update()
         return model, x
 
-    def ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB):
+    def ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, obj_scaling=cfg.obj_scaling.default):
         obj_constraints = []
 
         y[k] = model.addMVar(n, lb=y_LB[k], ub=y_UB[k])
@@ -659,7 +659,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                     obj_constraints.append(model.addConstr(un[i] <= jnp.abs(L[i]) * (1-v[i])))
 
         if pnorm == 1:
-            model.setObjective(cfg.obj_scaling * gp.quicksum(up + un), GRB.MAXIMIZE)
+            model.setObjective(1 / obj_scaling * gp.quicksum(up + un), GRB.MAXIMIZE)
         elif pnorm == 'inf':
             M = jnp.maximum(jnp.max(jnp.abs(U)), jnp.max(jnp.abs(L)))
             q = model.addVar(ub=M)
@@ -670,7 +670,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                 obj_constraints.append(model.addConstr(q <= up[i] + un[i] + M * (1 - gamma[i])))
 
             obj_constraints.append(model.addConstr(gp.quicksum(gamma) == 1))
-            model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
+            model.setObjective(1 / obj_scaling * q, gp.GRB.MAXIMIZE)
 
         model.update()
         if cfg.exact_conv_relax.use_in_l1_rel:
@@ -711,7 +711,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             # exit(0)
         model.optimize()
 
-        return model.objVal / cfg.obj_scaling, model.Runtime, x.X
+        return model.objVal * obj_scaling, model.Runtime, x.X
 
     max_sample_resids = samples(cfg, A, lambd, t, c_z, x_l, x_u)
 
@@ -761,6 +761,9 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     solvetimes = []
     theory_tighter_fracs = []
     x_out = jnp.zeros((K_max, m))
+
+    obj_scaling = cfg.obj_scaling.default
+
     for k in range(1, K_max+1):
         log.info(f'----K={k}----')
         yk_LB, yk_UB = BoundPreprocessing(k, At, y_LB, y_UB, z_LB, z_UB, Btx_LB, Btx_UB)
@@ -779,13 +782,16 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         if jnp.any(z_LB > z_UB):
             raise AssertionError('z bounds invalid after bound tight y + softthresholded')
 
-        result, time, xval = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB)
+        result, time, xval = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, obj_scaling=obj_scaling)
         x_out = x_out.at[k-1].set(xval)
         log.info(result)
         log.info(xval)
 
         Deltas.append(result)
         solvetimes.append(time)
+
+        if cfg.obj_scaling.val == 'adaptive':
+            obj_scaling = result
 
         Dk = jnp.sum(jnp.array(Deltas))
         for i in range(n):
