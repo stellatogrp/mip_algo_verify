@@ -32,7 +32,7 @@ x:
   u: 10.25
 
 K_min: 1
-K_max: 100
+K_max: 5
 pnorm: inf
 obj_scaling: 1000
   # val: 1000  # either a scaling value or 'adaptive' to be 1/(opt obj at K-1)
