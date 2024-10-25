@@ -808,6 +808,10 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         df = pd.DataFrame(solvetimes)
         df.to_csv('solvetimes.csv', index=False, header=False)
 
+        if cfg.theory_bounds:
+            df = pd.DataFrame(theory_tighter_fracs)
+            df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
+
         # plotting resids so far
         fig, ax = plt.subplots()
         ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
@@ -860,10 +864,10 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         plt.cla()
         plt.close()
 
-    log.info(f'max_sample_resids: {max_sample_resids}')
-    log.info(f'Deltas: {Deltas}')
-    log.info(f'times: {solvetimes}')
-    log.info(f'theory tighter fracs: {theory_tighter_fracs}')
+        log.info(f'max_sample_resids: {max_sample_resids}')
+        log.info(f'Deltas: {Deltas}')
+        log.info(f'times: {solvetimes}')
+        log.info(f'theory tighter fracs: {theory_tighter_fracs}')
 
     diffs = jnp.array(Deltas) - jnp.array(max_sample_resids)
     log.info(f'deltas - max_sample_resids: {diffs}')
