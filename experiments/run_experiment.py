@@ -3,9 +3,10 @@ import os
 import sys
 
 import hydra
+import ISTA.ISTA_hydra as ISTA_hydra
 
 # import ISTA.ISTA_incremental as ISTA_incr
-import ISTA.ISTA_hydra as ISTA_hydra
+import ISTA.ISTA_scratch_incremental as ISTA_scratch
 import LP.LP as LP
 import LP.LP_incremental as LP_incr
 
@@ -37,7 +38,10 @@ def main_experiment_lp(cfg):
 @hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
 def main_experiment_ista(cfg):
     # ISTA_incr.run(cfg)
-    ISTA_hydra.run(cfg)
+    if cfg.build_from_scratch:
+        ISTA_scratch.run(cfg)
+    else:
+        ISTA_hydra.run(cfg)
 
 
 base_dir_map = {
