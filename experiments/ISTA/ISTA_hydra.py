@@ -443,6 +443,8 @@ def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
     z_star.Start = z_samp
     x.Start = x_samp
 
+    model.setParam('TimeLimit', cfg.timelimit)
+
     y_star = At @ z_star + Bt @ x
 
     for i in range(n):
@@ -462,7 +464,9 @@ def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
         model.setObjective(obj, gp.GRB.MAXIMIZE)
         model.optimize()
 
-        max_rad = np.sqrt(model.objVal)
+        # max_rad = np.sqrt(model.objVal)
+        incumbent = np.sqrt(model.objVal)
+        max_rad = np.sqrt(model.objBound)
 
     elif C_norm == 1:
         y = (z_star - z0)
@@ -478,10 +482,14 @@ def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
         model.setObjective(gp.quicksum(up + un), gp.GRB.MAXIMIZE)
         model.optimize()
 
-        max_rad = model.objVal
+        # max_rad = model.objVal
+        incumbent = model.objVal
+        max_rad = model.objBound
 
     log.info(f'sample max init C: {SM_initC}')
-    log.info(f'miqp max radius: {max_rad}')
+    log.info(f'run time: {model.Runtime}')
+    log.info(f'incumbent sol: {incumbent}')
+    log.info(f'miqp max radius bound: {max_rad}')
 
     return max_rad
 
