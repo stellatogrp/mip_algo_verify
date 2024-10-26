@@ -398,6 +398,7 @@ def model_and_solve(cfg, K_max, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x
 
     n_var_shape = (K_max+1, n)
     model = gp.Model()
+    model.setParam('TimeLimit', cfg.timelimit)
 
     x = model.addMVar(m, lb=x_LB, ub=x_UB)
     y = model.addMVar(n_var_shape, lb=y_LB[:K_max+1], ub=y_UB[:K_max+1])
@@ -578,7 +579,7 @@ def model_and_solve(cfg, K_max, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x
 
     model.update()
     model.optimize()
-    return model.objVal * obj_scaling, model.Runtime, z.X, x.X
+    return model.objVal * obj_scaling, model.objBound * obj_scaling, model.MIPGap, model.Runtime, z.X, x.X
 
 
 def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
@@ -616,6 +617,8 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     log.info(Btx_UB)
 
     Deltas = []
+    Delta_bounds = []
+    Delta_gaps = []
     solvetimes = []
     theory_tighter_fracs = []
 
@@ -640,13 +643,15 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                 raise AssertionError('z bounds invalid after bound tight y + softthresholded')
 
         # result, time, xval = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB)
-        result, time, zval, xval = model_and_solve(cfg, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x_LB, x_UB, zval=zval, xval=xval, obj_scaling=obj_scaling)
+        result, bound, opt_gap, time, zval, xval = model_and_solve(cfg, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x_LB, x_UB, zval=zval, xval=xval, obj_scaling=obj_scaling)
 
         x_out = x_out.at[k-1].set(xval)
         log.info(result)
         log.info(xval)
 
         Deltas.append(result)
+        Delta_bounds.append(bound)
+        Delta_gaps.append(opt_gap)
         solvetimes.append(time)
 
         if cfg.obj_scaling.val == 'adaptive':
@@ -657,15 +662,22 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         log.info(theory_tighter_fracs)
 
         if cfg.postprocessing:
-            Dk = jnp.sum(jnp.array(Deltas))
+            # Dk = jnp.sum(jnp.array(Deltas))
+            Dk = jnp.sum(jnp.array(Delta_bounds))
             for i in range(n):
                 z_LB = z_LB.at[k, i].set(max(c_z[i] - Dk, soft_threshold(y_LB[k, i], lambda_t)))
                 z_UB = z_UB.at[k, i].set(min(c_z[i] + Dk, soft_threshold(y_UB[k, i], lambda_t)))
                 # z[k][i].LB = z_LB[k, i]
                 # z[k][i].UB = z_UB[k, i]
 
-        df = pd.DataFrame(Deltas)  # remove the first column of zeros
+        df = pd.DataFrame(Deltas)
         df.to_csv('resids.csv', index=False, header=False)
+
+        df = pd.DataFrame(Delta_bounds)
+        df.to_csv('resid_bounds.csv', index=False, header=False)
+
+        df = pd.DataFrame(Delta_gaps)
+        df.to_csv('resid_mip_gaps.csv', index=False, header=False)
 
         df = pd.DataFrame(solvetimes)
         df.to_csv('solvetimes.csv', index=False, header=False)
@@ -673,6 +685,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         # plotting resids so far
         fig, ax = plt.subplots()
         ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+        ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
         ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
 
         ax.set_xlabel(r'$K$')
@@ -722,9 +735,11 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         plt.cla()
         plt.close()
 
-    log.info(f'max_sample_resids: {max_sample_resids}')
-    log.info(f'Deltas: {Deltas}')
-    log.info(f'times: {solvetimes}')
+        log.info(f'max_sample_resids: {max_sample_resids}')
+        log.info(f'Deltas: {Deltas}')
+        log.info(f'Delta bounds: {Delta_bounds}')
+        log.info(f'opt gaps: {Delta_gaps}')
+        log.info(f'times: {solvetimes}')
 
     diffs = jnp.array(Deltas) - jnp.array(max_sample_resids)
     log.info(f'deltas - max_sample_resids: {diffs}')

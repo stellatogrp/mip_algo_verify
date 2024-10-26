@@ -36,7 +36,7 @@ K_max: 15
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
-  default: 1e-2
+  default: 1e-3
 warmstart: False
 
 build_from_scratch: True
@@ -44,7 +44,9 @@ theory_bounds: False
 postprocessing: False
 opt_based_tightening: False
 
-C_norm: 2
+timelimit: 10
+
+C_norm: 1
 star_bound_M: 1e4
 init_dist_M: 100
 
