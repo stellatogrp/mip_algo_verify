@@ -44,7 +44,7 @@ theory_bounds: True
 postprocessing: True
 opt_based_tightening: True
 
-timelimit: 5
+timelimit: 3600
 
 C_norm: 1
 star_bound_M: 1e4

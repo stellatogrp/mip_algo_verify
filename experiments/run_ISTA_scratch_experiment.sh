@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=ISTA
+#SBATCH --job-name=ISTA_scratch
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=28
 #SBATCH --mem-per-cpu=3G
 #SBATCH --time=1-05:00:00
 #SBATCH --array=0-3
-#SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/ISTA/runs/%A.txt
+#SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/ISTA_scratch/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=vranjan@princeton.edu
 # #SBATCH --gres=gpu:1
@@ -22,4 +22,4 @@ module load anaconda3/2024.6
 # module load anaconda3/2023.9 cudnn/cuda-11.x/8.2.0 cudatoolkit/11.3 nvhpc/21.5
 conda activate algover
 
-python run_experiment.py ISTA_scratch cluster
+python run_experiment.py ISTA cluster
