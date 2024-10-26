@@ -493,24 +493,27 @@ def theory_bounds(k, A, t, lambd, c_z, z_LB, z_UB, x_LB, x_UB, init_C):
 
     ATA = A.T @ A
     n = ATA.shape[0]
-    mu = jnp.min(jnp.real(jnp.linalg.eigvals(ATA)))
+    # mu = jnp.min(jnp.real(jnp.linalg.eigvals(ATA)))
     # log.info(f'mu = {mu}')
 
-    frac = (1- mu / t) / (1 + mu / t)
+    # frac = (1- mu / t) / (1 + mu / t)
 
-    const = 2 / t * jnp.sqrt(jnp.abs(jnp.power(frac, k))) * init_C
-    log.info(f'theory bound on fp resid: {const}')
+    # const = 2 / t * jnp.sqrt(jnp.abs(jnp.power(frac, k))) * init_C
+    # log.info(f'theory bound on fp resid: {const}')
+
+    log.info('remember this bound only works when t=1/L')
+    const = 2 * init_C / np.sqrt((k-1) * (k+2))
 
     theory_tight_count = 0
     for i in range(n):
         if z_LB[k-1, i] - const > z_LB[k, i]:
             theory_tight_count += 1
-            log.info(f'min, before: {z_LB[k, i]}, after{z_LB[k-1, i] - const}')
+            log.info(f'min, before: {z_LB[k, i]}, after {z_LB[k-1, i] - const}')
         z_LB = z_LB.at[k, i].set(max(z_LB[k, i], z_LB[k-1, i] - const))
 
         if z_UB[k-1, i] + const < z_UB[k, i]:
             theory_tight_count += 1
-            log.info(f'max, before: {z_UB[k, i]}, after{z_UB[k-1, i] + const}')
+            log.info(f'max, before: {z_UB[k, i]}, after {z_UB[k-1, i] + const}')
         z_UB = z_UB.at[k, i].set(min(z_UB[k, i], z_UB[k-1, i] + const))
 
 
