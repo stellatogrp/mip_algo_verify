@@ -6,8 +6,8 @@ lambd:
   scalar: 0.1  # if val == 'adaptive', then lambda = scalar * infty norm of A.T @ x for x the center of param set
 t: 0.04
 t_rel: 1
-m: 15
-n: 10
+m: 30
+n: 20
 mu: 1
 L: 5
 
@@ -32,7 +32,7 @@ x:
   u: 10.25
 
 K_min: 1
-K_max: 15
+K_max: 25
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)

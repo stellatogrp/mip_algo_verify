@@ -727,6 +727,12 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         return model.objVal * obj_scaling, model.objBound * obj_scaling, model.MIPGap, model.Runtime, x.X
 
     max_sample_resids = samples(cfg, A, lambd, t, c_z, x_l, x_u)
+    log.info(f'max sample resids: {max_sample_resids}')
+
+    max_sample_resids = samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u)
+    log.info(f'max sample resids with diff samples per K: {max_sample_resids}')
+
+    exit(0)
 
     pnorm = cfg.pnorm
     m, n = cfg.m, cfg.n
@@ -966,6 +972,43 @@ def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     df.to_csv(cfg.samples.out_fname, index=False, header=False)
 
     return max_sample_resids[1:]
+
+
+def samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u):
+    K_max = cfg.K_max
+
+    n = cfg.n
+    # t = cfg.t
+    At = jnp.eye(n) - t * A.T @ A
+    Bt = t * A.T
+    lambda_t = lambd * cfg.t
+
+    def z_sample(i):
+        return c_z
+
+    sample_idx = jnp.arange(cfg.samples.N)
+    z_samples = jax.vmap(z_sample)(sample_idx)
+
+    maxes = []
+
+    for k in range(1, K_max+1):
+        log.info(f'computing samples for k={k}')
+        def x_sample(i):
+            key = jax.random.PRNGKey(cfg.samples.x_seed_offset * k + i)
+            # TODO add the if, start with box case only
+            return jax.random.uniform(key, shape=(cfg.m,), minval=x_l, maxval=x_u)
+
+        x_samples_k = jax.vmap(x_sample)(sample_idx)
+        def ista_resids(i):
+            return ISTA_alg(At, Bt, z_samples[i], x_samples_k[i], lambda_t, k, pnorm=cfg.pnorm)
+
+        _, sample_resids = jax.vmap(ista_resids)(sample_idx)
+        log.info(sample_resids)
+        max_sample_k = jnp.max(sample_resids[:, -1])
+        log.info(f'max: {max_sample_k}')
+        maxes.append(max_sample_k)
+
+    return jnp.array(maxes)
 
 
 def generate_data(cfg):

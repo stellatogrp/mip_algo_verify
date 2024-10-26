@@ -629,6 +629,9 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     for k in range(1, K_max+1):
         log.info(f'----K={k}----')
         yk_LB, yk_UB = BoundPreprocessing(k, At, y_LB, y_UB, z_LB, z_UB, Btx_LB, Btx_UB)
+        log.info('y bounds')
+        log.info(yk_LB)
+        log.info(yk_UB)
         y_LB = y_LB.at[k].set(yk_LB)
         y_UB = y_UB.at[k].set(yk_UB)
         z_LB = z_LB.at[k].set(soft_threshold(yk_LB, lambda_t))

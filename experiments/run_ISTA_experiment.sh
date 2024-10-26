@@ -22,4 +22,4 @@ module load anaconda3/2024.6
 # module load anaconda3/2023.9 cudnn/cuda-11.x/8.2.0 cudatoolkit/11.3 nvhpc/21.5
 conda activate algover
 
-python run_experiment.py ISTA_scratch cluster
+python run_experiment.py ISTA cluster
