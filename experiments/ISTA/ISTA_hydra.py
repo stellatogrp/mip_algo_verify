@@ -698,14 +698,14 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             for i in range(n):
                 log.info('--computing conv cuts--')
 
-                if rel_z_out[i] > 0:
+                if (k, i) in w1 and rel_z_out[i] > 0:
                     Iint, lI, h, L_hat, U_hat = add_pos_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, rel_z, rel_x, rel_z_out)
 
                     if Iint is not None:
                         log.info(f'new lI constraint added with {(k, i)}')
                         model.addConstr(create_new_pos_constr(cfg, k, i, At, Bt, lambda_t, Iint, lI, h, z, x, L_hat, U_hat))
 
-                if rel_z_out[i] < 0:
+                if (k, i) in w2 and rel_z_out[i] < 0:
                     Iint, uI, h, L_hat, U_hat = add_neg_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, rel_z, rel_x, rel_z_out)
 
                     if Iint is not None:
@@ -779,11 +779,12 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             z_LB, z_UB, theory_tight_frac = theory_bounds(k, A, t, lambd, c_z, z_LB, z_UB, x_LB, x_UB, init_C)
             theory_tighter_fracs.append(theory_tight_frac)
 
-        y_LB, y_UB, z_LB, z_UB = BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
-        if jnp.any(y_LB > y_UB):
-            raise AssertionError('y bounds invalid after bound tight y')
-        if jnp.any(z_LB > z_UB):
-            raise AssertionError('z bounds invalid after bound tight y + softthresholded')
+        if cfg.opt_based_tightening:
+            y_LB, y_UB, z_LB, z_UB = BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
+            if jnp.any(y_LB > y_UB):
+                raise AssertionError('y bounds invalid after bound tight y')
+            if jnp.any(z_LB > z_UB):
+                raise AssertionError('z bounds invalid after bound tight y + softthresholded')
 
         result, time, xval = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, obj_scaling=obj_scaling)
         x_out = x_out.at[k-1].set(xval)
@@ -796,12 +797,13 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         if cfg.obj_scaling.val == 'adaptive':
             obj_scaling = result
 
-        Dk = jnp.sum(jnp.array(Deltas))
-        for i in range(n):
-            z_LB = z_LB.at[k, i].set(max(c_z[i] - Dk, soft_threshold(y_LB[k, i], lambda_t)))
-            z_UB = z_UB.at[k, i].set(min(c_z[i] + Dk, soft_threshold(y_UB[k, i], lambda_t)))
-            z[k][i].LB = z_LB[k, i]
-            z[k][i].UB = z_UB[k, i]
+        if cfg.postprocessing:
+            Dk = jnp.sum(jnp.array(Deltas))
+            for i in range(n):
+                z_LB = z_LB.at[k, i].set(max(c_z[i] - Dk, soft_threshold(y_LB[k, i], lambda_t)))
+                z_UB = z_UB.at[k, i].set(min(c_z[i] + Dk, soft_threshold(y_UB[k, i], lambda_t)))
+                z[k][i].LB = z_LB[k, i]
+                z[k][i].UB = z_UB[k, i]
 
         model.update()
 

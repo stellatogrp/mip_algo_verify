@@ -8,9 +8,9 @@ import ISTA.ISTA_hydra as ISTA_hydra
 # import ISTA.ISTA_incremental as ISTA_incr
 import ISTA.ISTA_scratch_incremental as ISTA_scratch
 import LP.LP as LP
-import LP.LP_incremental as LP_incr
 
-# import LP.LP_rel_incremental as LP_incr
+# import LP.LP_incremental as LP_incr
+import LP.LP_rel_incremental as LP_incr
 import NNQP.NNQP as NNQP
 import NNQP.NNQP_vec as NNQP_vec
 
@@ -37,17 +37,19 @@ def main_experiment_lp(cfg):
 
 @hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
 def main_experiment_ista(cfg):
-    # ISTA_incr.run(cfg)
-    if cfg.build_from_scratch:
-        ISTA_scratch.run(cfg)
-    else:
-        ISTA_hydra.run(cfg)
+    ISTA_hydra.run(cfg)
+
+
+@hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_scratch_experiment.yaml')
+def main_experiment_ista_scratch(cfg):
+    ISTA_scratch.run(cfg)
 
 
 base_dir_map = {
     'LP': 'LP/outputs',
     'NNQP': 'NNQP/outputs',
     'ISTA': 'ISTA/outputs',
+    'ISTA_scratch': 'ISTA_scratch/outputs',
 }
 
 
@@ -55,6 +57,7 @@ func_driver_map = {
     'LP': main_experiment_lp,
     'NNQP': main_experiment_nnqp,
     'ISTA': main_experiment_ista,
+    'ISTA_scratch': main_experiment_ista_scratch,
 }
 
 
@@ -87,6 +90,10 @@ ISTA_params = [
     ['m=10', 'n=5'],
     ['m=10', 'n=20'],
     ['m=20', 'n=10'],
+]
+
+ISTA_scratch_params = [
+    ['m=5', 'n=10'],
 ]
 
 def main():
@@ -127,6 +134,9 @@ def main():
 
         if experiment == 'ISTA':
             hydra_tags += ISTA_params[job_idx]
+
+        if experiment == 'ISTA_scratch':
+            hydra_tags += ISTA_scratch_params[job_idx]
 
     sys.argv = [sys.argv[0]] + hydra_tags
 

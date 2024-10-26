@@ -1,3 +1,4 @@
+import copy
 import logging
 
 import cvxpy as cp
@@ -95,6 +96,270 @@ def BuildRelaxedModel(K, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB
     return model, y
 
 
+def compute_lI(w, x, lambda_t, Lhat, Uhat, I, Icomp):
+    if I.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Uhat)) - lambda_t
+    if Icomp.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Lhat)) - lambda_t
+
+    w_I = w[I]
+    w_Icomp = w[Icomp]
+
+    Lhat_I = Lhat[I]
+    Uhat_I = Uhat[Icomp]
+
+    return jnp.sum(jnp.multiply(w_I, Lhat_I)) + jnp.sum(jnp.multiply(w_Icomp, Uhat_I)) - lambda_t
+
+
+def compute_v_pos(wi, xi, lambda_t, Lhat, Uhat):
+    idx = jnp.arange(wi.shape[0])
+    # log.info(idx)
+
+    filtered_idx = jnp.array([j for j in idx if wi[j] != 0 and jnp.abs(Uhat[j] - Lhat[j]) > 1e-7])
+    # log.info(filtered_idx)
+
+    def key_func(j):
+        return (xi[j] - Lhat[j]) / (Uhat[j] - Lhat[j])
+
+    keys = jnp.array([key_func(j) for j in filtered_idx])
+    # log.info(keys)
+    sorted_idx = jnp.argsort(keys)  # this is nondecreasing, should be the corrct one according to paper
+    # sorted_idx = jnp.argsort(keys)[::-1]
+    filtered_idx = filtered_idx[sorted_idx]
+
+    # log.info(filtered_idx)
+
+    I = jnp.array([])
+    Icomp = set(range(wi.shape[0]))
+
+    # log.info(Icomp)
+
+    lI = compute_lI(wi, xi, lambda_t, Lhat, Uhat, I, jnp.array(list(Icomp)))
+    # log.info(f'original lI: {lI}')
+    if lI < 0:
+        return None, None, None, None
+
+    for h in filtered_idx:
+        Itest = jnp.append(I, h)
+        Icomp_test = copy.copy(Icomp)
+        Icomp_test.remove(int(h))
+
+        # log.info(Itest)
+        # log.info(Icomp_test)
+
+        lI_new = compute_lI(wi, xi, lambda_t, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp_test)))
+        # log.info(lI_new)
+        if lI_new < 0:
+            Iint = I.astype(jnp.integer)
+            # log.info(f'h={h}')
+            # log.info(f'lI before and after: {lI}, {lI_new}')
+            rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
+            return Iint, rhs, lI, int(h)
+
+        I = Itest
+        Icomp = Icomp_test
+        lI = lI_new
+    else:
+        return None, None, None, None
+
+
+def add_pos_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, z, x, z_out):
+    n, m = Bt.shape
+    L_hat = jnp.zeros((m + n))
+    U_hat = jnp.zeros((m + n))
+
+    zkminus1_LB = z_LB[k-1]
+    zkminus1_UB = z_UB[k-1]
+
+    Ati = At[i]
+    Bti = Bt[i]
+
+    xi = jnp.hstack([z, x])
+    wi = jnp.hstack([Ati, Bti])
+
+    for j in range(n):
+        if Ati[j] >= 0:
+            L_hat = L_hat.at[j].set(zkminus1_LB[j])
+            U_hat = U_hat.at[j].set(zkminus1_UB[j])
+        else:
+            L_hat = L_hat.at[j].set(zkminus1_UB[j])
+            U_hat = U_hat.at[j].set(zkminus1_LB[j])
+
+    for j in range(m):
+        if Bti[j] >= 0:
+            L_hat = L_hat.at[n + j].set(x_LB[j])
+            U_hat = U_hat.at[n + j].set(x_UB[j])
+        else:
+            L_hat = L_hat.at[n + j].set(x_UB[j])
+            U_hat = U_hat.at[n + j].set(x_LB[j])
+
+    # log.info(L_hat)
+
+    Iint, rhs, lI, h = compute_v_pos(wi, xi, lambda_t, L_hat, U_hat)
+
+    if Iint is None:
+        return None, None, None, None, None
+
+    lhs = z_out[i]
+    if lhs > rhs + 1e-6:
+        log.info('found a violated cut')
+        log.info(f'with lI = {lI}')
+        log.info(f'and I = {Iint}')
+        log.info(f'h={h}')
+        # exit(0)
+
+    if lhs > rhs + 1e-6:
+        return Iint, lI, h, L_hat, U_hat
+    else:
+        return None, None, None, None, None
+
+
+def create_new_pos_constr(cfg, k, i, At, Bt, lambda_t, Iint, lI, h, z, x, Lhat, Uhat):
+    Ati = At[i]
+    Bti = Bt[i]
+
+    zx_stack = gp.hstack([z[k-1], x])
+    w = jnp.hstack([Ati, Bti])
+
+    new_constr = 0
+    for idx in Iint:
+        new_constr += w[idx] * (zx_stack[idx] - Lhat[idx])
+    new_constr += (lI - lambda_t) / (Uhat[h] - Lhat[h]) * (zx_stack[h] - Lhat[h])
+
+    return z[k][i] <= new_constr
+
+
+def compute_uI(w, x, lambda_t, Lhat, Uhat, I, Icomp):
+    if I.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Lhat)) + lambda_t
+    if Icomp.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Uhat)) + lambda_t
+
+    w_I = w[I]
+    w_Icomp = w[Icomp]
+
+    Lhat_I = Lhat[Icomp]
+    Uhat_I = Uhat[I]
+
+    return jnp.sum(jnp.multiply(w_I, Uhat_I)) + jnp.sum(jnp.multiply(w_Icomp, Lhat_I)) + lambda_t
+
+
+def compute_v_neg(wi, xi, lambda_t, Lhat, Uhat):
+    idx = jnp.arange(wi.shape[0])
+    # log.info(idx)
+
+    filtered_idx = jnp.array([j for j in idx if wi[j] != 0 and jnp.abs(Lhat[j] - Uhat[j]) > 1e-7])
+    # log.info(filtered_idx)
+
+    def key_func(j):
+        return (xi[j] - Uhat[j]) / (Lhat[j] - Uhat[j])
+
+    keys = jnp.array([key_func(j) for j in filtered_idx])
+    # log.info(keys)
+    sorted_idx = jnp.argsort(keys)  # should this be in reverse order?
+    # sorted_idx = jnp.argsort(keys)[::-1]
+    filtered_idx = filtered_idx[sorted_idx]
+
+    # log.info(filtered_idx)
+
+    I = jnp.array([])
+    Icomp = set(range(wi.shape[0]))
+
+    # log.info(Icomp)
+
+    uI = compute_uI(wi, xi, lambda_t, Lhat, Uhat, I, jnp.array(list(Icomp)))
+    # log.info(f'original lI: {lI}')
+    if uI > 0:
+        return None, None, None, None
+
+    for h in filtered_idx:
+        Itest = jnp.append(I, h)
+        Icomp_test = copy.copy(Icomp)
+        Icomp_test.remove(int(h))
+
+        # log.info(Itest)
+        # log.info(Icomp_test)
+
+        uI_new = compute_uI(wi, xi, lambda_t, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp_test)))
+        # log.info(lI_new)
+        if uI_new > 0:
+            Iint = I.astype(jnp.integer)
+            # log.info(f'h={h}')
+            # log.info(f'uI before and after: {uI}, {uI_new}')
+            rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + uI / (Lhat[int(h)] - Uhat[int(h)]) * (xi[int(h)] - Uhat[int(h)])
+            return Iint, rhs, uI, int(h)
+
+        I = Itest
+        Icomp = Icomp_test
+        uI = uI_new
+    else:
+        return None, None, None, None
+
+
+def add_neg_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, z, x, z_out):
+    n, m = Bt.shape
+    L_hat = jnp.zeros((m + n))
+    U_hat = jnp.zeros((m + n))
+
+    zkminus1_LB = z_LB[k-1]
+    zkminus1_UB = z_UB[k-1]
+
+    Ati = At[i]
+    Bti = Bt[i]
+
+    xi = jnp.hstack([z, x])
+    wi = jnp.hstack([Ati, Bti])
+
+    for j in range(n):
+        if Ati[j] >= 0:
+            L_hat = L_hat.at[j].set(zkminus1_LB[j])
+            U_hat = U_hat.at[j].set(zkminus1_UB[j])
+        else:
+            L_hat = L_hat.at[j].set(zkminus1_UB[j])
+            U_hat = U_hat.at[j].set(zkminus1_LB[j])
+
+    for j in range(m):
+        if Bti[j] >= 0:
+            L_hat = L_hat.at[n + j].set(x_LB[j])
+            U_hat = U_hat.at[n + j].set(x_UB[j])
+        else:
+            L_hat = L_hat.at[n + j].set(x_UB[j])
+            U_hat = U_hat.at[n + j].set(x_LB[j])
+
+    Iint, rhs, uI, h = compute_v_neg(wi, xi, lambda_t, L_hat, U_hat)
+
+    if Iint is None:
+    # if Iint.shape[0] == 0:
+        return None, None, None, None, None
+
+    lhs = z_out[i]
+    if lhs < rhs - 1e-6:
+        log.info('found a violated cut')
+        log.info(f'with uI = {uI}')
+        log.info(f'and I = {Iint}')
+        # exit(0)
+
+    if lhs < rhs - 1e-6:
+        return Iint, uI, h, L_hat, U_hat
+    else:
+        return None, None, None, None, None
+
+
+def create_new_neg_constr(cfg, k, i, At, Bt, lambda_t, Iint, uI, h, z, x, Lhat, Uhat):
+    Ati = At[i]
+    Bti = Bt[i]
+
+    zx_stack = gp.hstack([z[k-1], x])
+    w = jnp.hstack([Ati, Bti])
+
+    new_constr = 0
+    for idx in Iint:
+        new_constr += w[idx] * (zx_stack[idx] - Uhat[idx])
+    new_constr += (uI + lambda_t) / (Lhat[h] - Uhat[h]) * (zx_stack[h] - Uhat[h])
+
+    return z[k][i] >= new_constr
+
+
 def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
     model, y = BuildRelaxedModel(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
     n = At.shape[0]
@@ -122,7 +387,7 @@ def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
     return y_LB, y_UB, z_LB, z_UB
 
 
-def model_and_solve(cfg, K_max, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x_LB, x_UB, zval=None, xval=None):
+def model_and_solve(cfg, K_max, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x_LB, x_UB, zval=None, xval=None, obj_scaling=1e-3):
     At = np.asarray(At)
     Bt = np.asarray(Bt)
 
@@ -256,7 +521,7 @@ def model_and_solve(cfg, K_max, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x
                 obj_constraints.append(model.addConstr(un[i] <= jnp.abs(L[i]) * (1-v[i])))
 
     if pnorm == 1:
-        model.setObjective(cfg.obj_scaling * gp.quicksum(up + un), GRB.MAXIMIZE)
+        model.setObjective(1 / obj_scaling * gp.quicksum(up + un), GRB.MAXIMIZE)
     elif pnorm == 'inf':
         M = jnp.maximum(jnp.max(jnp.abs(U)), jnp.max(jnp.abs(L)))
         q = model.addVar(ub=M)
@@ -267,19 +532,53 @@ def model_and_solve(cfg, K_max, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x
             obj_constraints.append(model.addConstr(q <= up[i] + un[i] + M * (1 - gamma[i])))
 
         obj_constraints.append(model.addConstr(gp.quicksum(gamma) == 1))
-        model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
+        model.setObjective(1 / obj_scaling * q, gp.GRB.MAXIMIZE)
 
     # if u_val is not None:
     #     u[:K_max].Start = u_val
     #     v[:K_max].Start = v_val
 
-    if zval is not None:
-        z[:K_max].Start = zval
-        x.Start = xval
+    if cfg.warmstart:
+        if zval is not None:
+            z[:K_max].Start = zval
+            x.Start = xval
+
+    model.update()
+    if cfg.exact_conv_relax.use_in_l1_rel:
+        rel_model = model.relax()
+        rel_model.optimize()
+        log.info(f'relaxed obj val at {k}: {rel_model.objVal}')
+        rel_z = jnp.zeros((K_max+1, n))
+        rel_x = np.array([])
+        for var in x:
+            rel_x = np.append(rel_x, rel_model.getVarByName(var.VarName.item()).X)
+
+        for kk in range(K_max + 1):
+            for i in range(n):
+                rel_z = rel_z.at[kk, i].set(rel_model.getVarByName(z[kk, i].VarName.item()).X)
+
+        rel_z = np.asarray(rel_z)
+
+        for kk in range(1, K_max + 1):
+            log.info(f'computing conv cuts with k={kk}')
+            for i in range(n):
+                if (kk, i) in w1 and rel_z[kk, i] > 0:
+                    Iint, lI, h, L_hat, U_hat = add_pos_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, rel_z[kk-1], rel_x, rel_z[kk])
+
+                    if Iint is not None:
+                        log.info(f'new lI constraint added with {(k, i)}')
+                        model.addConstr(create_new_pos_constr(cfg, k, i, At, Bt, lambda_t, Iint, lI, h, z, x, L_hat, U_hat))
+
+                if (kk, i) in w2 and rel_z[kk, i] < 0:
+                    Iint, uI, h, L_hat, U_hat = add_neg_conv_cuts(cfg, k, i, At, Bt, lambda_t, z_LB, z_UB, x_LB, x_UB, rel_z[kk-1], rel_x, rel_z[kk])
+
+                    if Iint is not None:
+                        log.info(f'new uI constraint added with {(k, i)}')
+                        model.addConstr(create_new_neg_constr(cfg, k, i, At, Bt, lambda_t, Iint, uI, h, z, x, L_hat, U_hat))
 
     model.update()
     model.optimize()
-    return model.objVal / cfg.obj_scaling, model.Runtime, z.X, x.X
+    return model.objVal * obj_scaling, model.Runtime, z.X, x.X
 
 
 def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
@@ -323,6 +622,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     x_out = jnp.zeros((K_max, m))
     zval, xval = None, None
 
+    obj_scaling = cfg.obj_scaling.default
     for k in range(1, K_max+1):
         log.info(f'----K={k}----')
         yk_LB, yk_UB = BoundPreprocessing(k, At, y_LB, y_UB, z_LB, z_UB, Btx_LB, Btx_UB)
@@ -332,14 +632,15 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         z_UB = z_UB.at[k].set(soft_threshold(yk_UB, lambda_t))
 
         # TODO: add theory bound in between
-        y_LB, y_UB, z_LB, z_UB = BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
-        if jnp.any(y_LB > y_UB):
-            raise AssertionError('y bounds invalid after bound tight y')
-        if jnp.any(z_LB > z_UB):
-            raise AssertionError('z bounds invalid after bound tight y + softthresholded')
+        if cfg.opt_based_tightening:
+            y_LB, y_UB, z_LB, z_UB = BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
+            if jnp.any(y_LB > y_UB):
+                raise AssertionError('y bounds invalid after bound tight y')
+            if jnp.any(z_LB > z_UB):
+                raise AssertionError('z bounds invalid after bound tight y + softthresholded')
 
         # result, time, xval = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB)
-        result, time, zval, xval = model_and_solve(cfg, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x_LB, x_UB, zval=zval, xval=xval)
+        result, time, zval, xval = model_and_solve(cfg, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x_LB, x_UB, zval=zval, xval=xval, obj_scaling=obj_scaling)
 
         x_out = x_out.at[k-1].set(xval)
         log.info(result)
@@ -348,16 +649,20 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         Deltas.append(result)
         solvetimes.append(time)
 
+        if cfg.obj_scaling.val == 'adaptive':
+            obj_scaling = result
+
         log.info(Deltas)
         log.info(solvetimes)
         log.info(theory_tighter_fracs)
 
-        Dk = jnp.sum(jnp.array(Deltas))
-        for i in range(n):
-            z_LB = z_LB.at[k, i].set(max(c_z[i] - Dk, soft_threshold(y_LB[k, i], lambda_t)))
-            z_UB = z_UB.at[k, i].set(min(c_z[i] + Dk, soft_threshold(y_UB[k, i], lambda_t)))
-            # z[k][i].LB = z_LB[k, i]
-            # z[k][i].UB = z_UB[k, i]
+        if cfg.postprocessing:
+            Dk = jnp.sum(jnp.array(Deltas))
+            for i in range(n):
+                z_LB = z_LB.at[k, i].set(max(c_z[i] - Dk, soft_threshold(y_LB[k, i], lambda_t)))
+                z_UB = z_UB.at[k, i].set(min(c_z[i] + Dk, soft_threshold(y_UB[k, i], lambda_t)))
+                # z[k][i].LB = z_LB[k, i]
+                # z[k][i].UB = z_UB[k, i]
 
         df = pd.DataFrame(Deltas)  # remove the first column of zeros
         df.to_csv('resids.csv', index=False, header=False)
