@@ -72,17 +72,22 @@ NNQP_params = [
     ['n=40', 'two_step=False', 'one_step=True'],
 ]
 
+# LP_params = [
+#     ['flow.x.demand_ub=-6', 'momentum=False'],
+#     ['flow.x.demand_ub=-6', 'momentum=True'],
+#     ['flow.x.demand_ub=-5', 'momentum=False'],
+#     ['flow.x.demand_ub=-5', 'momentum=True'],
+#     ['flow.x.demand_ub=-4', 'momentum=False'],
+#     ['flow.x.demand_ub=-4', 'momentum=True'],
+#     ['flow.x.demand_ub=-3', 'momentum=False'],
+#     ['flow.x.demand_ub=-3', 'momentum=True'],
+#     ['flow.x.demand_ub=-2', 'momentum=False'],
+#     ['flow.x.demand_ub=-2', 'momentum=True'],
+# ]
+
 LP_params = [
-    ['flow.x.demand_ub=-6', 'momentum=False'],
-    ['flow.x.demand_ub=-6', 'momentum=True'],
-    ['flow.x.demand_ub=-5', 'momentum=False'],
-    ['flow.x.demand_ub=-5', 'momentum=True'],
-    ['flow.x.demand_ub=-4', 'momentum=False'],
-    ['flow.x.demand_ub=-4', 'momentum=True'],
-    ['flow.x.demand_ub=-3', 'momentum=False'],
-    ['flow.x.demand_ub=-3', 'momentum=True'],
-    ['flow.x.demand_ub=-2', 'momentum=False'],
-    ['flow.x.demand_ub=-2', 'momentum=True'],
+    ['momentum=False', 'K_max=50'],
+    ['momentum=True', 'K_max=50'],
 ]
 
 ISTA_params = [

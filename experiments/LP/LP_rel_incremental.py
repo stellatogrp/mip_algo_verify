@@ -156,8 +156,8 @@ def sample_radius(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
     return jnp.max(distances), u_val, v_val, x_samp
 
 
-def init_dist(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
-    SM_initC, u_samp, v_samp, x_samp = sample_radius(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=C_norm)
+def init_dist(cfg, A, c, t, u0_val, v0_val, x_LB, x_UB, C_norm=1):
+    SM_initC, u_samp, v_samp, x_samp = sample_radius(cfg, A, c, t, u0_val, v0_val, x_LB, x_UB, C_norm=C_norm)
     log.info(f'sample max init C: {SM_initC}')
 
     m, n = A.shape
@@ -172,8 +172,8 @@ def init_dist(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
     ustar = model.addMVar(n, lb=0, ub=bound_M)
     vstar = model.addMVar(m, lb=-bound_M, ub=bound_M)
     x = model.addMVar(m, lb=x_LB, ub=x_UB)
-    u0 = model.addMVar(n, lb=u0, ub=u0)
-    v0 = model.addMVar(m, lb=v0, ub=v0)
+    u0 = model.addMVar(n, lb=u0_val, ub=u0_val)
+    v0 = model.addMVar(m, lb=v0_val, ub=v0_val)
     w = model.addMVar(n, vtype=gp.GRB.BINARY)
 
     M = cfg.init_dist_M
@@ -200,6 +200,8 @@ def init_dist(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
     model.addConstr(A @ ustar == x)
     model.addConstr(-A.T @ vstar + c >= 0)
 
+    log.info(u0_val)
+    log.info(v0_val)
     z0 = gp.hstack([u0, v0])
     zstar = gp.hstack([ustar, vstar])
 
@@ -213,7 +215,7 @@ def init_dist(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
         max_rad = np.sqrt(model.objVal)
 
     elif C_norm == 1:
-        y = Ps_half @ (zstar - z0)
+        y = Ps_half @ (z0 - zstar)
         up = model.addMVar(m + n, lb=0, ub=bound_M)
         un = model.addMVar(m + n, lb=0, ub=bound_M)
         omega = model.addMVar(m + n, vtype=gp.GRB.BINARY)
@@ -230,6 +232,11 @@ def init_dist(cfg, A, c, t, u0, v0, x_LB, x_UB, C_norm=1):
 
     log.info(f'sample max init C: {SM_initC}')
     log.info(f'miqp max radius: {max_rad}')
+
+    # log.info(x.X)
+    # log.info(zstar.X)
+
+    # log.info(jnp.linalg.norm(z0.X - zstar.X, 1))
 
     return max_rad
 
@@ -375,6 +382,7 @@ def theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=False
         theory_bound = np.sqrt(n) * init_C / np.sqrt(k - 1)
 
     model = gp.Model()
+    model.setParam('TimeLimit', cfg.timelimit)
     # model.Params.OutputFlag = 0
     z_LB = np.hstack([u_LB[k-1], v_LB[k-1]])
     z_UB = np.hstack([u_UB[k-1], v_UB[k-1]])
@@ -670,6 +678,7 @@ def LP_run(cfg, A, c, t, u0, v0):
 
     def Init_model():
         model = gp.Model()
+        model.setParam('TimeLimit', cfg.timelimit)
 
         x = model.addMVar(m, lb=x_LB, ub=x_UB)
         u[0] = model.addMVar(n, lb=u0, ub=u0)  # if nonsingleton, change here
@@ -678,7 +687,7 @@ def LP_run(cfg, A, c, t, u0, v0):
         model.update()
         return model, x
 
-    def ModelNextStep(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=False, beta_func=None):
+    def ModelNextStep(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=False, beta_func=None, obj_scaling=cfg.obj_scaling.default):
         obj_constraints = []
         np_c = np.asarray(c)
         np_A = np.asarray(A)
@@ -751,7 +760,7 @@ def LP_run(cfg, A, c, t, u0, v0):
                     obj_constraints.append(model.addConstr(v_objn[i] <= jnp.abs(Lv[i]) * (1-v_omega[i])))
 
             if pnorm == 1:
-                model.setObjective(cfg.obj_scaling * (gp.quicksum(u_objp + u_objn) + gp.quicksum(v_objp + v_objn)), gp.GRB.MAXIMIZE)
+                model.setObjective(1 / obj_scaling * (gp.quicksum(u_objp + u_objn) + gp.quicksum(v_objp + v_objn)), gp.GRB.MAXIMIZE)
             elif pnorm == 'inf':
                 Mu = jnp.maximum(jnp.abs(Uu), jnp.abs(Lu))
                 Mv = jnp.maximum(jnp.abs(Uv), jnp.abs(Lv))
@@ -768,7 +777,7 @@ def LP_run(cfg, A, c, t, u0, v0):
                     obj_constraints.append(model.addConstr(q <= v_objp[i] + v_objn[i] + all_max * (1 - gamma_v[i])))
 
                 obj_constraints.append(model.addConstr(gp.quicksum(gamma_u) + gp.quicksum(gamma_v) == 1))
-                model.setObjective(cfg.obj_scaling * q, gp.GRB.MAXIMIZE)
+                model.setObjective(1 / obj_scaling * q, gp.GRB.MAXIMIZE)
 
         model.update()
         # log.info(u_omega)
@@ -805,7 +814,8 @@ def LP_run(cfg, A, c, t, u0, v0):
                     model.addConstr(create_new_constr(A, k, i, t, Iint, lI, h, u, v, L_hat, U_hat))
         model.optimize()
 
-        return model.objVal / cfg.obj_scaling, model.Runtime, x.X
+        # model.objBound * obj_scaling, model.MIPGap
+        return model.objVal * obj_scaling, model.objBound * obj_scaling, model.MIPGap, model.Runtime, x.X
 
     log.info(cfg)
 
@@ -849,8 +859,12 @@ def LP_run(cfg, A, c, t, u0, v0):
     model, x = Init_model()
 
     Deltas = []
+    Delta_bounds = []
+    Delta_gaps = []
     solvetimes = []
     theory_tighter_fracs = []
+
+    obj_scaling = cfg.obj_scaling.default
 
     x_out = jnp.zeros((K_max, m))
     for k in range(1, K_max+1):
@@ -868,8 +882,9 @@ def LP_run(cfg, A, c, t, u0, v0):
             u_LB, u_UB, v_LB, v_UB, theory_tight_frac = theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=momentum, beta_func=beta_func)
             theory_tighter_fracs.append(theory_tight_frac)
 
-        utilde_LB, utilde_UB, u_LB, u_UB = BoundTightU(cfg, k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
-        v_LB, v_UB = BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+        if cfg.opt_based_tightening:
+            utilde_LB, utilde_UB, u_LB, u_UB = BoundTightU(cfg, k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+            v_LB, v_UB = BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
 
         if jnp.any(utilde_LB > utilde_UB):
             raise AssertionError('utilde bounds invalid after LP based bounds')
@@ -878,24 +893,31 @@ def LP_run(cfg, A, c, t, u0, v0):
         if jnp.any(v_LB > v_UB):
             raise AssertionError('v bounds invalid after LP based bounds')
 
-        result, time, xval = ModelNextStep(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+        result, bound, opt_gap, time, xval = ModelNextStep(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func, obj_scaling=obj_scaling)
         x_out = x_out.at[k-1].set(xval)
         log.info(result)
         log.info(xval)
 
         Deltas.append(result)
+        Delta_bounds.append(bound)
+        Delta_gaps.append(opt_gap)
         solvetimes.append(time)
+
+        if cfg.obj_scaling.val == 'adaptive':
+            obj_scaling = result
 
         log.info(Deltas)
         log.info(solvetimes)
         log.info(theory_tighter_fracs)
 
-        Dk = jnp.sum(jnp.array(Deltas))
-        for i in range(n):
-            u_LB = u_LB.at[k, i].set(max(u0[i] - Dk, jax.nn.relu(utilde_LB[k, i])))
-            u_UB = u_UB.at[k, i].set(min(u0[i] + Dk, jax.nn.relu(utilde_UB[k, i])))
-            u[k][i].LB = u_LB[k, i]
-            u[k][i].UB = u_UB[k, i]
+        if cfg.postprocessing:
+            # Dk = jnp.sum(jnp.array(Deltas))
+            Dk = jnp.sum(jnp.array(Delta_bounds))
+            for i in range(n):
+                u_LB = u_LB.at[k, i].set(max(u0[i] - Dk, jax.nn.relu(utilde_LB[k, i])))
+                u_UB = u_UB.at[k, i].set(min(u0[i] + Dk, jax.nn.relu(utilde_UB[k, i])))
+                u[k][i].LB = u_LB[k, i]
+                u[k][i].UB = u_UB[k, i]
 
         for i in range(m):
             v_LB = v_LB.at[k, i].set(max(v0[i] - Dk, v_LB[k, i]))
@@ -911,6 +933,12 @@ def LP_run(cfg, A, c, t, u0, v0):
         else:
             df.to_csv(cfg.vanilla_resid_fname, index=False, header=False)
 
+        df = pd.DataFrame(Delta_bounds)
+        df.to_csv('resid_bounds.csv', index=False, header=False)
+
+        df = pd.DataFrame(Delta_gaps)
+        df.to_csv('resid_mip_gaps.csv', index=False, header=False)
+
         df = pd.DataFrame(solvetimes)
         if cfg.momentum:
             df.to_csv(cfg.momentum_time_fname, index=False, header=False)
@@ -924,6 +952,7 @@ def LP_run(cfg, A, c, t, u0, v0):
         # plotting resids so far
         fig, ax = plt.subplots()
         ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+        ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
         ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
 
         ax.set_xlabel(r'$K$')
