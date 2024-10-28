@@ -3,7 +3,7 @@ n: 14
 rng_seed: 0
 stepsize: .1
 rel_stepsize: 0.85  # needs to be under 0.5 for theory results
-momentum: False
+momentum: True
 beta_func: nesterov
 
 u0:
@@ -43,7 +43,7 @@ flow:
     supply_lb: 20
     supply_ub: 20
     demand_lb: -10
-    demand_ub: 0
+    demand_ub: -5
     capacity_lb: 5
     capacity_ub: 5
 
@@ -52,8 +52,10 @@ incremental: True
 theory_bounds: True
 postprocessing: True
 opt_based_tightening: True
+num_obbt_iter: 3
 
-timelimit: 3600
+mipgap: 0.1
+timelimit: 4800
 
 K_min: 1
 K_max: 50

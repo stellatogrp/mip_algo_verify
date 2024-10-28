@@ -382,6 +382,7 @@ def theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=False
         theory_bound = np.sqrt(n) * init_C / np.sqrt(k - 1)
 
     model = gp.Model()
+    model.setParam('MIPGap', cfg.mipgap)
     model.setParam('TimeLimit', cfg.timelimit)
     # model.Params.OutputFlag = 0
     z_LB = np.hstack([u_LB[k-1], v_LB[k-1]])
@@ -678,6 +679,7 @@ def LP_run(cfg, A, c, t, u0, v0):
 
     def Init_model():
         model = gp.Model()
+        model.setParam('MIPGap', cfg.mipgap)
         model.setParam('TimeLimit', cfg.timelimit)
 
         x = model.addMVar(m, lb=x_LB, ub=x_UB)
@@ -883,8 +885,9 @@ def LP_run(cfg, A, c, t, u0, v0):
             theory_tighter_fracs.append(theory_tight_frac)
 
         if cfg.opt_based_tightening:
-            utilde_LB, utilde_UB, u_LB, u_UB = BoundTightU(cfg, k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
-            v_LB, v_UB = BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+            for _ in range(cfg.num_obbt_iter):
+                utilde_LB, utilde_UB, u_LB, u_UB = BoundTightU(cfg, k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
+                v_LB, v_UB = BoundTightV(k, A, c, t, utilde_LB, utilde_UB, u_LB, u_UB, v_LB, v_UB, x_LB, x_UB, momentum=momentum, beta_func=beta_func)
 
         if jnp.any(utilde_LB > utilde_UB):
             raise AssertionError('utilde bounds invalid after LP based bounds')
