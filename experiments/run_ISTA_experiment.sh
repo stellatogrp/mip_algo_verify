@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=28
 #SBATCH --mem-per-cpu=3G
-#SBATCH --time=1-05:00:00
+#SBATCH --time=2-10:00:00
 #SBATCH --array=0-3
 #SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/ISTA/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT

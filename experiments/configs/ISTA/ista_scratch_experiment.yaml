@@ -51,7 +51,7 @@ star_bound_M: 1e4
 init_dist_M: 100
 
 exact_conv_relax:
-  use_in_l1_rel: True
+  use_in_l1_rel: False
 
 samples:
   z_seed_offset: 100
