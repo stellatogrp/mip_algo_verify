@@ -32,11 +32,7 @@ x:
   u: 10.25
 
 K_min: 1
-<<<<<<< Updated upstream
-K_max: 25
-=======
 K_max: 50
->>>>>>> Stashed changes
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
