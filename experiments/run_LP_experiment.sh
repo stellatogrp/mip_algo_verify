@@ -4,8 +4,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=28
 #SBATCH --mem-per-cpu=3G
-#SBATCH --time=02-05:00:59
-#SBATCH --array=0-9
+#SBATCH --time=02-18:00:00
+#SBATCH --array=0-1
 #SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/LP/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=vranjan@princeton.edu

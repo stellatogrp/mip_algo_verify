@@ -42,8 +42,8 @@ flow:
     type: 'box'
     supply_lb: 20
     supply_ub: 20
-    demand_lb: -7.5
-    demand_ub: -5
+    demand_lb: -10
+    demand_ub: -7
     capacity_lb: 5
     capacity_ub: 5
 
