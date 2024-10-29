@@ -399,6 +399,7 @@ def model_and_solve(cfg, K_max, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, x
     n_var_shape = (K_max+1, n)
     model = gp.Model()
     model.setParam('TimeLimit', cfg.timelimit)
+    model.setParam('MIPGap', cfg.mipgap)
 
     x = model.addMVar(m, lb=x_LB, ub=x_UB)
     y = model.addMVar(n_var_shape, lb=y_LB[:K_max+1], ub=y_UB[:K_max+1])
