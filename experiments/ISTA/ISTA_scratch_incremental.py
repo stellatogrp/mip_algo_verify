@@ -595,7 +595,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
     At = np.asarray(At)
     Bt = np.asarray(Bt)
-    lambda_t = lambd * cfg.t
+    lambda_t = lambd * t
 
     K_max = cfg.K_max
 
@@ -787,7 +787,7 @@ def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     # t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
-    lambda_t = lambd * cfg.t
+    lambda_t = lambd * t
 
     sample_idx = jnp.arange(cfg.samples.N)
 
@@ -888,7 +888,7 @@ def random_ISTA_run(cfg):
     else:
         lambd = cfg.lambd.val
     log.info(f'lambda: {lambd}')
-    lambda_t = lambd * cfg.t
+    lambda_t = lambd * t
     log.info(f'lambda * t: {lambda_t}')
 
     if cfg.z0.type == 'lstsq':

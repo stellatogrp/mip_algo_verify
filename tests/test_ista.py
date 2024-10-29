@@ -45,3 +45,20 @@ def test_convergence():
 
     print(xk)
     assert np.linalg.norm(xk - x.value) <= 1e-7
+
+    print('--testing fista--')
+
+    betak = 1.
+    xk = np.zeros(n)
+    wk = xk
+    for _ in range(K):
+        xnew = soft_threshold(At @ wk + Bt @ b, lambda_t)
+        beta_new = .5 * (1 + np.sqrt(1 + 4 * betak ** 2))
+        wnew = xnew + (betak - 1)/beta_new * (xnew - xk)
+
+        xk = xnew
+        betak = beta_new
+        wk = wnew
+
+    print(xk)
+    assert np.linalg.norm(xk - x.value) <= 1e-7

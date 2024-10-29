@@ -3,6 +3,7 @@ import os
 import sys
 
 import hydra
+import ISTA.FISTA_hydra as FISTA_hydra
 import ISTA.ISTA_hydra as ISTA_hydra
 
 # import ISTA.ISTA_incremental as ISTA_incr
@@ -45,11 +46,17 @@ def main_experiment_ista_scratch(cfg):
     ISTA_scratch.run(cfg)
 
 
+@hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
+def main_experiment_fista(cfg):
+    FISTA_hydra.run(cfg)
+
+
 base_dir_map = {
     'LP': 'LP/outputs',
     'NNQP': 'NNQP/outputs',
     'ISTA': 'ISTA/outputs',
     'ISTA_scratch': 'ISTA_scratch/outputs',
+    'FISTA': 'FISTA/outputs',
 }
 
 
@@ -58,6 +65,7 @@ func_driver_map = {
     'NNQP': main_experiment_nnqp,
     'ISTA': main_experiment_ista,
     'ISTA_scratch': main_experiment_ista_scratch,
+    'FISTA': main_experiment_fista,
 }
 
 
@@ -102,6 +110,11 @@ ISTA_scratch_params = [
     ['m=20', 'n=30', 'K_max=25'],
 ]
 
+# add FISTA params
+FISTA_params = [
+
+]
+
 def main():
     if len(sys.argv) < 3:
         print('not enough command line arguments')
@@ -143,6 +156,9 @@ def main():
 
         if experiment == 'ISTA_scratch':
             hydra_tags += ISTA_scratch_params[job_idx]
+
+        if experiment == 'FISTA':
+            hydra_tags += FISTA_params[job_idx]
 
     sys.argv = [sys.argv[0]] + hydra_tags
 

@@ -732,17 +732,14 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     max_sample_resids = samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u)
     log.info(f'max sample resids with diff samples per K: {max_sample_resids}')
 
-    exit(0)
-
     pnorm = cfg.pnorm
     m, n = cfg.m, cfg.n
-    # t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
 
     At = np.asarray(At)
     Bt = np.asarray(Bt)
-    lambda_t = lambd * cfg.t
+    lambda_t = lambd * t
 
     K_max = cfg.K_max
 
@@ -942,10 +939,9 @@ def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
 
 def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     n = cfg.n
-    # t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
-    lambda_t = lambd * cfg.t
+    lambda_t = lambd * t
 
     sample_idx = jnp.arange(cfg.samples.N)
 
@@ -981,7 +977,7 @@ def samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u):
     # t = cfg.t
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
-    lambda_t = lambd * cfg.t
+    lambda_t = lambd * t
 
     def z_sample(i):
         return c_z
@@ -1066,9 +1062,6 @@ def random_ISTA_run(cfg):
     A_eigs = jnp.real(jnp.linalg.eigvals(A.T @ A))
     log.info(f'eigenvalues of ATA: {A_eigs}')
 
-    # L = jnp.max(A_eigs)
-    # t = cfg.t_rel / L
-
     t = cfg.t
 
     log.info(f't={t}')
@@ -1083,7 +1076,7 @@ def random_ISTA_run(cfg):
     else:
         lambd = cfg.lambd.val
     log.info(f'lambda: {lambd}')
-    lambda_t = lambd * cfg.t
+    lambda_t = lambd * t
     log.info(f'lambda * t: {lambda_t}')
 
     if cfg.z0.type == 'lstsq':
