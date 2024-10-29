@@ -362,6 +362,7 @@ def create_new_neg_constr(cfg, k, i, At, Bt, lambda_t, Iint, uI, h, z, x, Lhat, 
 
 
 def BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB):
+    log.info('bound tightening for y')
     model, y = BuildRelaxedModel(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
     n = At.shape[0]
     for sense in [GRB.MINIMIZE, GRB.MAXIMIZE]:
@@ -814,11 +815,12 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             theory_tighter_fracs.append(theory_tight_frac)
 
         if cfg.opt_based_tightening:
-            y_LB, y_UB, z_LB, z_UB = BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
-            if jnp.any(y_LB > y_UB):
-                raise AssertionError('y bounds invalid after bound tight y')
-            if jnp.any(z_LB > z_UB):
-                raise AssertionError('z bounds invalid after bound tight y + softthresholded')
+            for _ in range(cfg.num_obbt_iter):
+                y_LB, y_UB, z_LB, z_UB = BoundTightY(k, At, Bt, lambda_t, c_z, x_l, x_u, y_LB, y_UB, z_LB, z_UB)
+                if jnp.any(y_LB > y_UB):
+                    raise AssertionError('y bounds invalid after bound tight y')
+                if jnp.any(z_LB > z_UB):
+                    raise AssertionError('z bounds invalid after bound tight y + softthresholded')
 
         result, bound, opt_gap, time, xval= ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, obj_scaling=obj_scaling)
         x_out = x_out.at[k-1].set(xval)

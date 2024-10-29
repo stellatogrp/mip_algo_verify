@@ -58,7 +58,7 @@ mipgap: 0.1
 timelimit: 5400
 
 K_min: 1
-K_max: 50
+K_max: 20
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
