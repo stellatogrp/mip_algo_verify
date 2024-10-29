@@ -1,10 +1,13 @@
 import logging
 
 import cvxpy as cp
+import gurobipy as gp
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+from gurobipy import GRB
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
@@ -28,16 +31,176 @@ def interval_bound_prop(A, l, u):
     return Ax_upper, Ax_lower
 
 
+def get_Dk_Ek(k, n, gamma):
+    Dk = (1 + gamma[k]) * np.eye(n)
+    Ek = -gamma[k] * np.eye(n)
+    return np.asarray(Dk), np.asarray(Ek)
+
+
+def BoundPreprocessing(k, At, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, Btx_LB, Btx_UB, gamma, lambda_t):
+    Atvk_UB, Atvk_LB = interval_bound_prop(At, v_LB[k-1], v_UB[k-1])
+    yk_UB = Atvk_UB + Btx_UB
+    yk_LB = Atvk_LB + Btx_LB
+
+    if jnp.any(yk_UB < yk_LB):
+        raise AssertionError('basic y bound prop failed')
+
+    y_LB = y_LB.at[k].set(yk_LB)
+    y_UB = y_UB.at[k].set(yk_UB)
+    z_LB = z_LB.at[k].set(soft_threshold(yk_LB, lambda_t))
+    z_UB = z_UB.at[k].set(soft_threshold(yk_UB, lambda_t))
+
+    Dk, Ek = get_Dk_Ek(k, At.shape[0], gamma)
+
+    Dkzk_UB, Dkzk_LB = interval_bound_prop(Dk, z_LB[k], z_UB[k])
+    Ekzkminus1_UB, Ekzkminus1_LB = interval_bound_prop(Ek, z_LB[k-1], z_UB[k-1])
+
+    vk_UB = Dkzk_UB + Ekzkminus1_UB
+    vk_LB = Dkzk_LB + Ekzkminus1_LB
+
+    if jnp.any(vk_UB < vk_LB):
+        raise AssertionError('basic v bound prop failed')
+
+    v_LB = v_LB.at[k].set(vk_LB)
+    v_UB = v_UB.at[k].set(vk_UB)
+
+    return y_LB, y_UB, z_LB, z_UB, v_LB, v_UB
+
+
+def BuildRelaxedModel(K, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_l, x_u):
+    n, m = Bt.shape
+
+    At = np.asarray(At)
+    Bt = np.asarray(Bt)
+
+    model = gp.Model()
+    model.Params.OutputFlag = 0
+
+    x = model.addMVar(m, lb=x_l, ub=x_u)
+
+    # NOTE: we do NOT have bounds on zk or vk yet, so only bound up to zk-1 and prop forward to yk
+
+    z = model.addMVar((K+1, n), lb=z_LB[:K+1], ub=z_UB[:K+1])
+    y = model.addMVar((K+1, n), lb=y_LB[:K+1], ub=y_UB[:K+1])
+    v = model.addMVar((K+1, n), lb=v_LB[:K+1], ub=v_UB[:K+1])
+
+    for k in range(1, K+1):
+        Dk, Ek = get_Dk_Ek(k, n, gamma)
+        model.addConstr(v[k] == Dk @ z[k] + Ek @ z[k-1])
+
+    for k in range(1, K+1):
+        model.addConstr(y[k] == At @ z[k-1] + Bt @ x)
+
+    for k in range(1, K+1):
+        for i in range(n):
+            if y_LB[k, i] >= lambda_t:
+                model.addConstr(z[k, i] == y[k, i] - lambda_t)
+
+            elif y_UB[k, i] <= -lambda_t:
+                model.addConstr(z[k, i] == y[k, i] + lambda_t)
+
+            elif y_LB[k, i] >= -lambda_t and y_UB[k, i] <= lambda_t:
+                model.addConstr(z[k, i] == 0.0)
+
+            elif y_LB[k, i] < -lambda_t and y_UB[k, i] > lambda_t:
+                model.addConstr(z[k, i] >= y[k, i] - lambda_t)
+                model.addConstr(z[k, i] <= y[k, i] + lambda_t)
+
+                model.addConstr(z[k, i] <= z_UB[k, i]/(y_UB[k, i] + lambda_t)*(y[k, i] + lambda_t))
+                model.addConstr(z[k, i] >= z_LB[k, i]/(y_LB[k, i] - lambda_t)*(y[k, i] - lambda_t))
+
+            elif -lambda_t <= y_LB[k, i] <= lambda_t and y_UB[k, i] > lambda_t:
+                model.addConstr(z[k, i] >= 0)
+                model.addConstr(z[k, i] <= z_UB[k, i]/(y_UB[k, i] - y_LB[k, i])*(y[k, i] - y_LB[k, i]))
+                model.addConstr(z[k, i] >= y[k, i] - lambda_t)
+
+            elif -lambda_t <= y_UB[k, i] <= lambda_t and y_LB[k, i] < -lambda_t:
+                model.addConstr(z[k, i] <= 0)
+                model.addConstr(z[k, i] >= z_LB[k, i]/(y_LB[k, i] - y_UB[k, i])*(y[k, i] - y_UB[k, i]))
+                model.addConstr(z[k, i] <= y[k, i] + lambda_t)
+            else:
+                raise RuntimeError('Unreachable code', y_LB[k, i], y_UB[k, i], lambda_t)
+
+    model.update()
+    return model, y, v
+
+
+def BoundTightY(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_LB, x_UB):
+    model, y, _ = BuildRelaxedModel(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_LB, x_UB)
+    n = At.shape[0]
+
+    for sense in [GRB.MINIMIZE, GRB.MAXIMIZE]:
+        for i in range(n):
+            model.setObjective(y[k, i], sense)
+            model.update()
+            model.optimize()
+
+            if model.status != GRB.OPTIMAL:
+                print('bound tighting failed, GRB model status:', model.status)
+                return None
+
+            if sense == GRB.MAXIMIZE:
+                y_UB = y_UB.at[k, i].set(model.objVal)
+            else:
+                y_LB = y_LB.at[k, i].set(model.objVal)
+
+            if y_LB[k, i] > y_UB[k, i]:
+                raise ValueError('Infeasible bounds', sense, i, k, y_LB[k, i], y_UB[k, i])
+
+    z_UB = z_UB.at[k].set(soft_threshold(y_UB[k], lambda_t))
+    z_LB = z_LB.at[k].set(soft_threshold(y_LB[k], lambda_t))
+
+    return y_LB, y_UB, z_LB, z_UB
+
+
+def BoundTightV(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_LB, x_UB):
+    model, _, v = BuildRelaxedModel(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_LB, x_UB)
+    n = At.shape[0]
+
+    for sense in [GRB.MINIMIZE, GRB.MAXIMIZE]:
+        for i in range(n):
+            model.setObjective(v[k, i], sense)
+            model.update()
+            model.optimize()
+
+            if model.status != GRB.OPTIMAL:
+                print('bound tighting failed, GRB model status:', model.status)
+                return None
+
+            if sense == GRB.MAXIMIZE:
+                v_UB = v_UB.at[k, i].set(model.objVal)
+            else:
+                v_LB = v_LB.at[k, i].set(model.objVal)
+
+            if v_LB[k, i] > v_UB[k, i]:
+                raise ValueError('Infeasible bounds', sense, i, k, v_LB[k, i], v_UB[k, i])
+
+    return v_LB, v_UB
+
+
 def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
     def Init_model():
+        model = gp.Model()
+        model.setParam('TimeLimit', cfg.timelimit)
+        model.setParam('MIPGap', cfg.mipgap)
+
+        x = model.addMVar(m, lb=x_l, ub=x_u)
+        z[0] = model.addMVar(n, lb=c_z, ub=c_z)  # if non singleton, change here
+        v[0] = model.addMVar(n, lb=c_z, ub=c_z)
+
+        model.update()
+        return model, x
+
+    def ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, obj_scaling=cfg.obj_scaling.default):
+        # obj_constraints = []
         pass
 
     max_sample_resids = samples(cfg, A, lambd, t, c_z, x_l, x_u)
     log.info(f'max sample resids: {max_sample_resids}')
 
     # pnorm = cfg.pnorm
-    # m, n = cfg.m, cfg.n
+    m, n = cfg.m, cfg.n
     # At = jnp.eye(n) - t * A.T @ A
     # Bt = t * A.T
 
@@ -56,10 +219,63 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
     # z_LB = z_LB.at[0].set(c_z)
     # z_UB = z_UB.at[0].set(c_z)
-    # v_LB = w_LB.at[0].set(c_z)
-    # v_UB = w_UB.at[0].set(c_z)
+    # v_LB = v_LB.at[0].set(c_z)
+    # v_UB = v_UB.at[0].set(c_z)
     # x_LB = x_l
     # x_UB = x_u
+
+    # init_C = 1e4
+
+    # Btx_UB, Btx_LB = interval_bound_prop(Bt, x_l, x_u)
+    # if jnp.any(Btx_UB < Btx_LB):
+    #     raise AssertionError('Btx upper/lower bounds are invalid')
+
+    # beta = jnp.ones(K_max + 1)
+    # gamma = jnp.zeros(K_max + 1)
+    # for k in range(1, K_max+1):
+    #     beta = beta.at[k].set(.5 * (1 + jnp.sqrt(1 + 4 * jnp.power(beta[k-1], 2))))
+    #     gamma = gamma.at[k].set((beta[k-1] - 1) / beta[k])
+
+    # log.info(f'beta: {beta}')
+    # log.info(f'gamma: {gamma}')
+
+    z = {}
+    v = {}
+    # z, y, v = {}, {}, {}
+
+    # w1, w2 = {}, {}
+
+    # model, x = Init_model()
+
+    # Deltas = []
+    # Delta_bounds = []
+    # Delta_gaps = []
+    # solvetimes = []
+    # theory_tighter_fracs = []
+    # x_out = jnp.zeros((K_max, m))
+
+    # obj_scaling = cfg.obj_scaling.default
+
+    # for k in range(1, K_max+1):
+    #     log.info(f'----K={k}----')
+    #     y_LB, y_UB, z_LB, z_UB, v_LB, v_UB = BoundPreprocessing(k, At, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, Btx_LB, Btx_UB, gamma, lambda_t)
+
+    #     # if cfg.theory_bounds:
+    #     #     z_LB, z_UB, theory_tight_frac = theory_bounds(k, A, t, lambd, c_z, z_LB, z_UB, x_LB, x_UB, init_C)
+    #     #     theory_tighter_fracs.append(theory_tight_frac)
+
+    #     if cfg.opt_based_tightening:
+    #         y_LB, y_UB, z_LB, z_UB = BoundTightY(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_l, x_u)
+    #         if jnp.any(y_LB > y_UB):
+    #             raise AssertionError('y bounds invalid after bound tight y')
+    #         if jnp.any(z_LB > z_UB):
+    #             raise AssertionError('z bounds invalid after bound tight y + softthresholded')
+
+    #         v_LB, v_UB = BoundTightV(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_l, x_u)
+    #         if jnp.any(v_LB > v_UB):
+    #             raise AssertionError('v bounds invalid after bound tight v')
+
+    #     log.info(jnp.max(jnp.abs(z_UB[k] - z_UB[k-1])))
 
 
 def samples(cfg, A, lambd, t, c_z, x_l, x_u):
@@ -271,7 +487,36 @@ def sparse_coding_FISTA_run(cfg):
 
 
 def random_FISTA_run(cfg):
-    pass
+    m, n = cfg.m, cfg.n
+    log.info(cfg)
+
+    A = generate_data(cfg)
+    A_eigs = jnp.real(jnp.linalg.eigvals(A.T @ A))
+    log.info(f'eigenvalues of ATA: {A_eigs}')
+
+    t = cfg.t
+
+    log.info(f't={t}')
+
+    if cfg.x.type == 'box':
+        x_l = cfg.x.l * jnp.ones(m)
+        x_u = cfg.x.u * jnp.ones(m)
+
+    if cfg.lambd.val == 'adaptive':
+        center = x_u - x_l
+        lambd = cfg.lambd.scalar * jnp.max(jnp.abs(A.T @ center))
+    else:
+        lambd = cfg.lambd.val
+    log.info(f'lambda: {lambd}')
+    lambda_t = lambd * t
+    log.info(f'lambda * t: {lambda_t}')
+
+    if cfg.z0.type == 'lstsq':
+        c_z = lstsq_sol(cfg, A, lambd, x_l, x_u)
+    elif cfg.z0.type == 'zero':
+        c_z = jnp.zeros(n)
+
+    FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
 
 
 def run(cfg):

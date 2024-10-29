@@ -554,9 +554,9 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         # log.info(z_LB)
         # log.info(z_UB)
 
-        for constr in obj_constraints:
-            model.remove(constr)
-        model.update()
+        # for constr in obj_constraints:
+        #     model.remove(constr)
+        # model.update()
 
         # affine constraints
         model.addConstr(y[k] == At @ z[k-1] + Bt @ x)
@@ -653,9 +653,20 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         v = model.addMVar(n, vtype=gp.GRB.BINARY)
         up = model.addMVar(n, ub=jnp.abs(U))
         un = model.addMVar(n, ub=jnp.abs(L))
+        # v = {}
+        # up = {}
+        # un = {}
 
         if pnorm == 1 or pnorm == 'inf':
             obj_constraints.append(model.addConstr(up - un == z[k] - z[k-1]))
+
+            # for i in range(n):
+            #     up[i] = model.addVar(ub=jnp.abs(U)[i])
+            #     un[i] = model.addVar(ub=jnp.abs(L)[i])
+            #     v[i] = model.addVar(vtype=gp.GRB.BINARY)
+
+            #     obj_constraints.append(up[i] - un[i] == z[k][i] - z[k-1][i])
+
             for i in range(n):
                 obj_constraints.append(up[i] <= np.abs(z_UB[k, i] - z_LB[k-1, i]) * v[i])
                 obj_constraints.append(un[i] <= np.abs(z_LB[k, i] - z_UB[k-1, i]) * (1 - v[i]))
@@ -722,8 +733,14 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                     if Iint is not None:
                         log.info(f'new uI constraint added with {(k, i)}')
                         model.addConstr(create_new_neg_constr(cfg, k, i, At, Bt, lambda_t, Iint, uI, h, z, x, L_hat, U_hat))
-            # exit(0)
+        model.update()
         model.optimize()
+
+        for constr in obj_constraints:
+            try:
+                model.remove(constr)
+            except gp.GurobiError:
+                pass
 
         # return model.objVal * obj_scaling, model.Runtime, x.X
         return model.objVal * obj_scaling, model.objBound * obj_scaling, model.MIPGap, model.Runtime, x.X
@@ -803,7 +820,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             if jnp.any(z_LB > z_UB):
                 raise AssertionError('z bounds invalid after bound tight y + softthresholded')
 
-        result, bound, opt_gap, time, xval = ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, obj_scaling=obj_scaling)
+        result, bound, opt_gap, time, xval= ModelNextStep(model, k, At, Bt, lambda_t, c_z, y_LB, y_UB, z_LB, z_UB, obj_scaling=obj_scaling)
         x_out = x_out.at[k-1].set(xval)
         log.info(result)
         log.info(xval)

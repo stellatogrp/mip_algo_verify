@@ -28,11 +28,11 @@ z0:
 x:
   seed: 1
   type: box
-  l: 9.75
+  l: 10.
   u: 10.25
 
 K_min: 1
-K_max: 50
+K_max: 10
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)

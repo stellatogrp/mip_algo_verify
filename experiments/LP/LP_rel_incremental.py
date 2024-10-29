@@ -698,9 +698,9 @@ def LP_run(cfg, A, c, t, u0, v0):
         u[k] = model.addMVar(n, lb=u_LB[k], ub=u_UB[k])
         v[k] = model.addMVar(m, lb=v_LB[k], ub=v_UB[k])
 
-        for constr in obj_constraints:
-            model.remove(constr)
-        model.update()
+        # for constr in obj_constraints:
+        #     model.remove(constr)
+        # model.update()
 
         vD_k, vE_k = get_vDk_vEk(k-1, t, A, momentum=momentum, beta_func=beta_func)
         vD_k, vE_k = np.asarray(vD_k), np.asarray(vE_k)
@@ -814,7 +814,14 @@ def LP_run(cfg, A, c, t, u0, v0):
                 if Iint is not None:
                     log.info('new constraint added')
                     model.addConstr(create_new_constr(A, k, i, t, Iint, lI, h, u, v, L_hat, U_hat))
+        model.update()
         model.optimize()
+
+        for constr in obj_constraints:
+            try:
+                model.remove(constr)
+            except gp.GurobiError:
+                pass
 
         # model.objBound * obj_scaling, model.MIPGap
         return model.objVal * obj_scaling, model.objBound * obj_scaling, model.MIPGap, model.Runtime, x.X
