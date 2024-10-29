@@ -444,6 +444,7 @@ def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
     x.Start = x_samp
 
     model.setParam('TimeLimit', cfg.timelimit)
+    model.setParam('MIPGap', cfg.mipgap)
 
     y_star = At @ z_star + Bt @ x
 
@@ -533,6 +534,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     def Init_model():
         model = gp.Model()
         model.setParam('TimeLimit', cfg.timelimit)
+        model.setParam('MIPGap', cfg.mipgap)
 
         x = model.addMVar(m, lb=x_l, ub=x_u)
         z[0] = model.addMVar(n, lb=c_z, ub=c_z)  # if non singleton, change here
