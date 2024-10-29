@@ -2,8 +2,8 @@ m: 7
 n: 14
 rng_seed: 0
 stepsize: .1
-rel_stepsize: 0.85
-momentum: True
+rel_stepsize: 0.8
+momentum: False
 beta_func: nesterov
 
 u0:
@@ -27,7 +27,7 @@ flow:
   n_supply: 10
   n_demand: 5
   p: 0.5
-  seed: 1
+  seed: 2
   c:
     seed: 2
     low: 5
@@ -40,12 +40,12 @@ flow:
     type: 'high_demand'
   x:
     type: 'box'
-    supply_lb: 20
-    supply_ub: 20
-    demand_lb: -10
-    demand_ub: -7
-    capacity_lb: 5
-    capacity_ub: 5
+    supply_lb: 10
+    supply_ub: 10
+    demand_lb: -7
+    demand_ub: -4
+    capacity_lb: 4
+    capacity_ub: 4
 
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 incremental: True
