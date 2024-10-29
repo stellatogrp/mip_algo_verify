@@ -99,10 +99,10 @@ LP_params = [
 ]
 
 ISTA_params = [
-    ['m=30', 'n=20', 'K_max=50', 'lambd.val=0.01'],
-    ['m=20', 'n=30', 'K_max=50', 'lambd.val=0.01'],
-    ['m=30', 'n=20', 'K_max=50', 'lambd.val=1'],
-    ['m=20', 'n=30', 'K_max=50', 'lambd.val=1'],
+    ['m=25', 'n=20', 'K_max=50', 'lambd.val=0.01'],
+    ['m=20', 'n=25', 'K_max=50', 'lambd.val=0.01'],
+    # ['m=30', 'n=20', 'K_max=50', 'lambd.val=1'],
+    # ['m=20', 'n=30', 'K_max=50', 'lambd.val=1'],
 ]
 
 ISTA_scratch_params = [

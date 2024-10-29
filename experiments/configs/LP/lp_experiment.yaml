@@ -43,7 +43,7 @@ flow:
     supply_lb: 10
     supply_ub: 10
     demand_lb: -7
-    demand_ub: -4
+    demand_ub: -5
     capacity_lb: 4
     capacity_ub: 4
 
@@ -54,8 +54,8 @@ postprocessing: True
 opt_based_tightening: True
 num_obbt_iter: 3
 
-mipgap: 0.1
-timelimit: 5400
+mipgap: 0.05
+timelimit: 7200
 
 K_min: 1
 K_max: 20
