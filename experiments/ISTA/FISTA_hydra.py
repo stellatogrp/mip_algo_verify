@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from gurobipy import GRB
+from tqdm import trange
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
@@ -179,6 +180,149 @@ def BoundTightV(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, 
                 raise ValueError('Infeasible bounds', sense, i, k, v_LB[k, i], v_UB[k, i])
 
     return v_LB, v_UB
+
+
+def sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
+    sample_idx = jnp.arange(cfg.samples.init_dist_N)
+    m, n = A.shape
+
+    def z_sample(i):
+        return c_z
+
+    def x_sample(i):
+        key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
+        # TODO add the if, start with box case only
+        return jax.random.uniform(key, shape=(m,), minval=x_LB, maxval=x_UB)
+
+    # z_samples = jax.vmap(z_sample)(sample_idx)
+    x_samples = jax.vmap(x_sample)(sample_idx)
+
+    distances = jnp.zeros(cfg.samples.init_dist_N)
+    for i in trange(cfg.samples.init_dist_N):
+        z = cp.Variable(n)
+        x_samp = x_samples[i]
+        obj = cp.Minimize(.5 * cp.sum_squares(A @ z - x_samp) + lambd * cp.norm(z, 1))
+        prob = cp.Problem(obj)
+        prob.solve()
+
+        distances = distances.at[i].set(np.linalg.norm(z.value - c_z, ord=C_norm))
+
+    # log.info(distances)
+
+    return jnp.max(distances), z.value, x_samp
+
+
+def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
+    SM_initC, z_samp, x_samp = sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=C_norm)
+    log.info(SM_initC)
+
+    m, n = A.shape
+    model = gp.Model()
+
+    At = jnp.eye(n) - t * A.T @ A
+    Bt = t * A.T
+    lambda_t = lambd * t
+
+    At = np.asarray(At)
+    Bt = np.asarray(Bt)
+
+    bound_M = cfg.star_bound_M
+    z_star = model.addMVar(n, lb=-bound_M, ub=bound_M)
+    x = model.addMVar(m, lb=x_LB, ub=x_UB)
+    z0 = model.addMVar(n, lb=c_z, ub=c_z)
+    w1 = model.addMVar(n, vtype=gp.GRB.BINARY)
+    w2 = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+    M = cfg.init_dist_M
+    z_star.Start = z_samp
+    x.Start = x_samp
+
+    model.setParam('TimeLimit', cfg.timelimit)
+    model.setParam('MIPGap', cfg.mipgap)
+
+    y_star = At @ z_star + Bt @ x
+
+    for i in range(n):
+        model.addConstr(z_star[i] >= y_star[i] - lambda_t)
+        model.addConstr(z_star[i] <= y_star[i] + lambda_t)
+
+        model.addConstr(z_star[i] <= y_star[i] - lambda_t + (2 * lambda_t)*(1-w1[i]))
+        model.addConstr(z_star[i] >= y_star[i] + lambda_t + (-2 * lambda_t) * (1-w2[i]))
+
+        model.addConstr(z_star[i] <= M * w1[i])
+        model.addConstr(z_star[i] >= -M * w2[i])
+
+        model.addConstr(w1[i] + w2[i] <= 1)
+
+    if C_norm == 2:
+        obj = (z_star - z0) @ (z_star - z0)
+        model.setObjective(obj, gp.GRB.MAXIMIZE)
+        model.optimize()
+
+        # max_rad = np.sqrt(model.objVal)
+        incumbent = np.sqrt(model.objVal)
+        max_rad = np.sqrt(model.objBound)
+
+    elif C_norm == 1:
+        y = (z_star - z0)
+        up = model.addMVar(n, lb=0, ub=bound_M)
+        un = model.addMVar(n, lb=0, ub=bound_M)
+        omega = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+        model.addConstr(up - un == y)
+        for i in range(n):
+            model.addConstr(up[i] <= bound_M * omega[i])
+            model.addConstr(un[i] <= bound_M * (1-omega[i]))
+
+        model.setObjective(gp.quicksum(up + un), gp.GRB.MAXIMIZE)
+        model.optimize()
+
+        # max_rad = model.objVal
+        incumbent = model.objVal
+        max_rad = model.objBound
+
+    log.info(f'sample max init C: {SM_initC}')
+    log.info(f'run time: {model.Runtime}')
+    log.info(f'incumbent sol: {incumbent}')
+    log.info(f'miqp max radius bound: {max_rad}')
+
+    return max_rad
+
+
+def theory_bounds(k, A, t, lambd, c_z, z_LB, z_UB, x_LB, x_UB, init_C, beta):
+    log.info(f'-theory bound for k={k}-')
+    if k == 1:
+        return z_LB, z_UB, 0
+
+    ATA = A.T @ A
+    n = ATA.shape[0]
+    # mu = jnp.min(jnp.real(jnp.linalg.eigvals(ATA)))
+    # log.info(f'mu = {mu}')
+
+    # frac = (1- mu / t) / (1 + mu / t)
+
+    # const = 2 / t * jnp.sqrt(jnp.abs(jnp.power(frac, k))) * init_C
+    # log.info(f'theory bound on fp resid: {const}')
+
+    log.info('remember this bound only works when t=1/L')
+    # const = 2 * init_C / np.sqrt((k-1) * (k+2))
+    T_sum = np.sum(beta[:k-1])
+    const = 2 * init_C / jnp.sqrt(T_sum)
+
+    theory_tight_count = 0
+    for i in range(n):
+        if z_LB[k-1, i] - const > z_LB[k, i]:
+            theory_tight_count += 1
+            log.info(f'min, before: {z_LB[k, i]}, after {z_LB[k-1, i] - const}')
+        z_LB = z_LB.at[k, i].set(max(z_LB[k, i], z_LB[k-1, i] - const))
+
+        if z_UB[k-1, i] + const < z_UB[k, i]:
+            theory_tight_count += 1
+            log.info(f'max, before: {z_UB[k, i]}, after {z_UB[k-1, i] + const}')
+        z_UB = z_UB.at[k, i].set(min(z_UB[k, i], z_UB[k-1, i] + const))
+
+
+    return z_LB, z_UB, theory_tight_count / (2 * n)
 
 
 def compute_lI(w, x, lambda_t, Lhat, Uhat, I, Icomp):
@@ -683,6 +827,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     x_UB = x_u
 
     # init_C = 1e4
+    init_C = init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=cfg.C_norm)
 
     Btx_UB, Btx_LB = interval_bound_prop(Bt, x_l, x_u)
     if jnp.any(Btx_UB < Btx_LB):
@@ -716,9 +861,9 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         log.info(f'----K={k}----')
         y_LB, y_UB, z_LB, z_UB, v_LB, v_UB = BoundPreprocessing(k, At, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, Btx_LB, Btx_UB, gamma, lambda_t)
 
-        # if cfg.theory_bounds:
-        #     z_LB, z_UB, theory_tight_frac = theory_bounds(k, A, t, lambd, c_z, z_LB, z_UB, x_LB, x_UB, init_C)
-        #     theory_tighter_fracs.append(theory_tight_frac)
+        if cfg.theory_bounds:
+            z_LB, z_UB, theory_tight_frac = theory_bounds(k, A, t, lambd, c_z, z_LB, z_UB, x_LB, x_UB, init_C, beta)
+            theory_tighter_fracs.append(theory_tight_frac)
 
         if cfg.opt_based_tightening:
             for _ in range(cfg.num_obbt_iter):
@@ -731,11 +876,6 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                 v_LB, v_UB = BoundTightV(k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB, x_l, x_u)
                 if jnp.any(v_LB > v_UB):
                     raise AssertionError('v bounds invalid after bound tight v')
-
-        # log.info(z_UB)
-        # zk, vk, resids = FISTA_alg(At, Bt, c_z, x_UB, lambda_t, k, pnorm=cfg.pnorm)
-        # log.info('sim')
-        # log.info(zk)
 
         result, bound, opt_gap, time, xval= ModelNextStep(model, k, At, Bt, gamma, lambda_t, y_LB, y_UB, z_LB, z_UB, v_LB, v_UB,obj_scaling=obj_scaling)
 
