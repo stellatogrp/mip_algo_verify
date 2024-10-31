@@ -384,6 +384,7 @@ def theory_bound(cfg, k, A, c, t, u_LB, u_UB, v_LB, v_UB, init_C, momentum=False
     model = gp.Model()
     model.setParam('MIPGap', cfg.mipgap)
     model.setParam('TimeLimit', cfg.timelimit)
+
     # model.Params.OutputFlag = 0
     z_LB = np.hstack([u_LB[k-1], v_LB[k-1]])
     z_UB = np.hstack([u_UB[k-1], v_UB[k-1]])
@@ -681,6 +682,7 @@ def LP_run(cfg, A, c, t, u0, v0):
         model = gp.Model()
         model.setParam('MIPGap', cfg.mipgap)
         model.setParam('TimeLimit', cfg.timelimit)
+        model.setParam('MIPFocus', cfg.mipfocus)
 
         x = model.addMVar(m, lb=x_LB, ub=x_UB)
         u[0] = model.addMVar(n, lb=u0, ub=u0)  # if nonsingleton, change here

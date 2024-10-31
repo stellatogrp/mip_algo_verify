@@ -536,6 +536,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         model = gp.Model()
         model.setParam('TimeLimit', cfg.timelimit)
         model.setParam('MIPGap', cfg.mipgap)
+        model.setParam('MIPFocus', cfg.mipfocus)
 
         x = model.addMVar(m, lb=x_l, ub=x_u)
         z[0] = model.addMVar(n, lb=c_z, ub=c_z)  # if non singleton, change here
@@ -1115,12 +1116,26 @@ def sparse_coding_A(cfg):
     key, subkey = jax.random.split(key)
     A = 1 / m * jax.random.normal(subkey, shape=(m, n))
 
-    A_mask = jax.random.bernoulli(key, p=cfg.x_star.A_mask_prob, shape=(m-1, n)).astype(jnp.float64)
+    # A_mask = jax.random.bernoulli(key, p=cfg.x_star.A_mask_prob, shape=(m-1, n)).astype(jnp.float64)
 
-    masked_A = jnp.multiply(A[1:], A_mask)
+    # masked_A = jnp.multiply(A[1:], A_mask)
 
-    A = A.at[1:].set(masked_A)
-    return A / jnp.linalg.norm(A, axis=0)
+    # A = A.at[1:].set(masked_A)
+    # return A / jnp.linalg.norm(A, axis=0)
+    A_mask = jax.random.bernoulli(key, p=cfg.x_star.A_mask_prob, shape=(m, n)).astype(jnp.float64)
+    masked_A = jnp.multiply(A, A_mask)
+    # log.info(masked_A)
+
+    for i in range(n):
+        Ai = masked_A[:, i]
+        if jnp.linalg.norm(Ai) > 0:
+            masked_A = masked_A.at[:, i].set(Ai / jnp.linalg.norm(Ai))
+
+    # log.info(jnp.linalg.norm(masked_A, axis=0))
+    # log.info(jnp.count_nonzero(masked_A.T @ masked_A))
+    # exit(0)
+
+    return masked_A
 
 
 def sparse_coding_b_set(cfg, A):
@@ -1129,7 +1144,7 @@ def sparse_coding_b_set(cfg, A):
     key = jax.random.PRNGKey(cfg.x_star.rng_seed)
 
     key, subkey = jax.random.split(key)
-    x_star_set = jax.random.normal(subkey, shape=(n, cfg.x_star.num))
+    x_star_set = cfg.x_star.std * jax.random.normal(subkey, shape=(n, cfg.x_star.num))
 
     key, subkey = jax.random.split(key)
     x_star_mask = jax.random.bernoulli(subkey, p=cfg.x_star.nonzero_prob, shape=(n, cfg.x_star.num))
