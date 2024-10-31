@@ -1116,7 +1116,8 @@ def mincostflow_LP_run(cfg):
             exit(0)
 
         u0 = x_tilde.value
-        v0 = -constraints[0].dual_value
+        v0 = constraints[0].dual_value
+        # v0 = jnp.zeros(m)
 
         log.info(f'u0: {u0}')
         log.info(f'v0: {v0}')

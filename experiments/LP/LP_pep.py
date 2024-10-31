@@ -222,15 +222,14 @@ def pep(K, R, L, t, alpha=1, theta=1):
         y[i + 1], _, _ = proximal_step(2 * x[i] - w[i], func1, alpha)
         w[i + 1] = w[i] + theta * (y[i + 1] - x[i])
 
-    problem.set_initial_condition((x[0] - xs) ** 2 + (y[0] - ys) ** 2 <= R ** 2)
+    problem.set_initial_condition((x[0] - xs) ** 2 + (w[0] - ys) ** 2 <= R ** 2)
 
     if K == 1:
         # problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
-        problem.set_performance_metric((x[-1] - x0) ** 2 + (w[-1] - y0) ** 2)
+        problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
     else:
         # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
         problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (w[-1] - w[-2]) ** 2)
-    # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
 
 
     start = time.time()
@@ -268,7 +267,7 @@ def momentum_pep(K, R, L, t, alpha=1, theta=1):
 
     if K == 1:
         # problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
-        problem.set_performance_metric((x[-1] - x0) ** 2 + (w[-1] - y0) ** 2)
+        problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
     else:
         # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
         problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (w[-1] - w[-2]) ** 2)
@@ -292,9 +291,9 @@ def LP_pep(cfg, A, c, t, u0, v0):
     for K in range(1, K_max + 1):
         log.info(f'----K={K}----')
         if cfg.momentum:
-            tau, time = momentum_pep(K, pep_rad, L, t)
+            tau, time = momentum_pep(K+1, pep_rad, L, t)
         else:
-            tau, time = pep(K, pep_rad, L, t)
+            tau, time = pep(K+1, pep_rad, L, t)
         taus.append(tau)
         times.append(time)
 
@@ -390,7 +389,7 @@ def mincostflow_LP_pep(cfg):
             exit(0)
 
         u0 = x_tilde.value
-        v0 = -constraints[0].dual_value
+        v0 = constraints[0].dual_value
 
         log.info(f'u0: {u0}')
         log.info(f'v0: {v0}')

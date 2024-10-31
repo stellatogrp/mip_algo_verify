@@ -2,7 +2,7 @@ m: 7
 n: 14
 rng_seed: 0
 stepsize: .1
-rel_stepsize: 0.8
+rel_stepsize: 0.5
 momentum: True
 beta_func: nesterov
 
@@ -52,11 +52,11 @@ incremental: True
 theory_bounds: True
 postprocessing: True
 opt_based_tightening: True
-num_obbt_iter: 3
+num_obbt_iter: 1
 
 mipgap: 0.05
 timelimit: 7200
-mipfocus: 3
+mipfocus: 0
 
 K_min: 1
 K_max: 50
@@ -85,7 +85,7 @@ samples:
   u_seed_offset: 100
   v_seed_offset: 101
   x_seed_offset: 102
-  N: 10000
+  N: 1000
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv
