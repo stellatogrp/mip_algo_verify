@@ -59,7 +59,7 @@ timelimit: 7200
 mipfocus: 3
 
 K_min: 1
-K_max: 20
+K_max: 50
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)

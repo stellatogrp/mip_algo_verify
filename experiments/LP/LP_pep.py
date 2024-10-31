@@ -69,7 +69,7 @@ def get_x_LB_UB(cfg, A):
     return lb, ub
 
 
-def sample_radius(cfg, A, c, t):
+def sample_radius(cfg, A, c, t, u0, v0):
     sample_idx = jnp.arange(cfg.samples.init_dist_N)
     m, n = A.shape
 
@@ -80,10 +80,12 @@ def sample_radius(cfg, A, c, t):
     #     v0 = jnp.zeros(m)
 
     def u_sample(i):
-        return jnp.zeros(n)
+        # return jnp.zeros(n)
+        return u0
 
     def v_sample(i):
-        return jnp.zeros(m)
+        # return jnp.zeros(m)
+        return v0
 
     # def x_sample(i):
     #     key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
@@ -102,7 +104,7 @@ def sample_radius(cfg, A, c, t):
 
     distances = jnp.zeros(cfg.samples.init_dist_N)
     for i in trange(cfg.samples.init_dist_N):
-        u = cp.Variable(cfg.n)
+        u = cp.Variable(n)
         x_samp = x_samples[i]
         obj = cp.Minimize(c @ u)
 
@@ -124,7 +126,7 @@ def sample_radius(cfg, A, c, t):
     return jnp.max(distances), u_val, v_val, x_samp
 
 
-def init_dist(cfg, A, c, t):
+def init_dist(cfg, A, c, t, u0_val, v0_val):
     m, n = A.shape
     A = np.asarray(A)
     c = np.asarray(c)
@@ -135,13 +137,19 @@ def init_dist(cfg, A, c, t):
         # x_UB = cfg.x.u * np.ones(m)
         x_LB, x_UB = get_x_LB_UB(cfg, A)
 
-    if cfg.u0.type == 'zero':
-        u0_LB = np.zeros(n)
-        u0_UB = np.zeros(n)
+    # if cfg.u0.type == 'zero':
+    #     u0_LB = np.zeros(n)
+    #     u0_UB = np.zeros(n)
 
-    if cfg.v0.type == 'zero':
-        v0_LB = np.zeros(m)
-        v0_UB = np.zeros(m)
+    # if cfg.v0.type == 'zero':
+    #     v0_LB = np.zeros(m)
+    #     v0_UB = np.zeros(m)
+
+    u0_LB = u0_val
+    u0_UB = u0_val
+
+    v0_LB = v0_val
+    v0_UB = v0_val
 
     bound_M = 110
     ustar = model.addMVar(n, lb=0, ub=bound_M)
@@ -153,7 +161,7 @@ def init_dist(cfg, A, c, t):
 
     M = cfg.init_dist_M
 
-    sample_rad, u_samp, v_samp, x_samp = sample_radius(cfg, A, c, t)
+    sample_rad, u_samp, v_samp, x_samp = sample_radius(cfg, A, c, t, u0_val, v0_val)
     log.info(f'sample radius: {sample_rad}')
     # exit(0)
 
@@ -192,7 +200,6 @@ def init_dist(cfg, A, c, t):
 def pep(K, R, L, t, alpha=1, theta=1):
     problem = PEP()
 
-    # func1 = problem.declare_function(ConvexIndicatorFunction)
     func1 = problem.declare_function(ConvexFunction)
     func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
 
@@ -207,7 +214,7 @@ def pep(K, R, L, t, alpha=1, theta=1):
     # zs = func.stationary_point()
 
     x = [x0 for _ in range(K)]
-    w = [x0 for _ in range(K + 1)]
+    w = [y0 for _ in range(K + 1)]
     y = [y0 for _ in range(K + 1)]
 
     for i in range(K):
@@ -218,9 +225,11 @@ def pep(K, R, L, t, alpha=1, theta=1):
     problem.set_initial_condition((x[0] - xs) ** 2 + (y[0] - ys) ** 2 <= R ** 2)
 
     if K == 1:
-        problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
+        # problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
+        problem.set_performance_metric((x[-1] - x0) ** 2 + (w[-1] - y0) ** 2)
     else:
-        problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
+        # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
+        problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (w[-1] - w[-2]) ** 2)
     # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
 
 
@@ -230,10 +239,51 @@ def pep(K, R, L, t, alpha=1, theta=1):
     return np.sqrt(pepit_tau), end - start
 
 
-def LP_pep(cfg, A, c, t):
-    pep_rad = init_dist(cfg, A, c, t)
+def momentum_pep(K, R, L, t, alpha=1, theta=1):
+    problem = PEP()
+
+    func1 = problem.declare_function(ConvexFunction)
+    func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
+
+    xs = func1.stationary_point()
+    ys = func2.stationary_point()
+
+    x0 = problem.set_initial_point()
+    y0 = problem.set_initial_point()
+
+    x = [x0 for _ in range(K)]
+    w = [y0 for _ in range(K + 1)]
+    y = [y0 for _ in range(K + 1)]
+
+    for i in range(K):
+        x[i], _, _ = proximal_step(w[i], func2, alpha)
+        y[i + 1], _, _ = proximal_step(2 * x[i] - w[i], func1, alpha)
+        beta_k = K/(K+3)
+        if i == 1:
+            w[i + 1] = w[i] + theta * (y[i + 1] - x[i])
+        else:
+            w[i + 1] = (1 + beta_k) * w[i] - beta_k * w[i-1] + + theta * (y[i + 1] - x[i])
+
+    problem.set_initial_condition((x[0] - xs) ** 2 + (w[0] - ys) ** 2 <= R ** 2)
+
+    if K == 1:
+        # problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
+        problem.set_performance_metric((x[-1] - x0) ** 2 + (w[-1] - y0) ** 2)
+    else:
+        # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
+        problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (w[-1] - w[-2]) ** 2)
+    # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
+
+
+    start = time.time()
+    pepit_tau = problem.solve(verbose=1, wrapper='mosek')
+    end = time.time()
+    return np.sqrt(pepit_tau), end - start
+
+
+def LP_pep(cfg, A, c, t, u0, v0):
+    pep_rad = init_dist(cfg, A, c, t, u0, v0)
     L = np.linalg.norm(A, ord=2)
-    log.info(L)
 
     K_max = cfg.K_max
 
@@ -241,7 +291,10 @@ def LP_pep(cfg, A, c, t):
     times = []
     for K in range(1, K_max + 1):
         log.info(f'----K={K}----')
-        tau, time = pep(K, pep_rad, L, t)
+        if cfg.momentum:
+            tau, time = momentum_pep(K, pep_rad, L, t)
+        else:
+            tau, time = pep(K, pep_rad, L, t)
         taus.append(tau)
         times.append(time)
 
@@ -287,6 +340,7 @@ def mincostflow_LP_pep(cfg):
     log.info(A.todense())
 
     t = cfg.rel_stepsize / spa.linalg.norm(A, ord=2)
+    log.info(f'using t={t}')
 
     key = jax.random.PRNGKey(flow.c.seed)
     c = jax.random.uniform(key, shape=(n_arcs,), minval=flow.c.low, maxval=flow.c.high)
@@ -309,7 +363,47 @@ def mincostflow_LP_pep(cfg):
 
     log.info(c_tilde)
 
-    LP_pep(cfg, jnp.asarray(A_block.todense()), c_tilde, t)
+    m, n = A_block.shape
+    if flow.u0.type == 'high_demand':
+        # x, _ = get_x_LB_UB(cfg, A_block)  # use the lower bound
+        supply_lb = flow.x.supply_lb
+        demand_lb = flow.x.demand_lb  # demand in our convention is negative so use the lower bound
+        capacity_ub = flow.x.capacity_ub
+
+        b_tilde = jnp.hstack([
+            supply_lb * jnp.ones(flow.n_supply),
+            demand_lb * jnp.ones(flow.n_demand),
+            capacity_ub * jnp.ones(n_arcs),
+        ])
+        log.info(f'hardest x to satisfy: {b_tilde}')
+
+        x_tilde = cp.Variable(n)
+
+        constraints = [A_block @ x_tilde == b_tilde, x_tilde >= 0]
+
+        prob = cp.Problem(cp.Minimize(c_tilde.T @ x_tilde), constraints)
+        res = prob.solve()
+        log.info(res)
+
+        if res == np.inf:
+            log.info('the problem in the family with lowest supply and highest demand is infeasible')
+            exit(0)
+
+        u0 = x_tilde.value
+        v0 = -constraints[0].dual_value
+
+        log.info(f'u0: {u0}')
+        log.info(f'v0: {v0}')
+
+    else:
+        if flow.u0.type == 'zero':
+            u0 = jnp.zeros(n)
+            # u0 = jnp.ones(n)  # TODO change back to zeros when done testing
+
+        if flow.v0.type == 'zero':
+            v0 = jnp.zeros(m)
+
+    LP_pep(cfg, jnp.asarray(A_block.todense()), c_tilde, t, np.asarray(u0), np.asarray(v0))
 
 
 def run(cfg):
