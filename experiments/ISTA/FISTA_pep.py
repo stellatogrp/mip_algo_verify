@@ -58,6 +58,16 @@ def sample_rad(cfg, A, c_z):
 
 
 def pep(K, R, mu, L, t, lambd, verbose=1):
+
+    K_max = K
+    beta = jnp.ones(K_max + 1)
+    gamma = jnp.zeros(K_max + 1)
+    for k in range(1, K_max+1):
+        beta = beta.at[k].set(.5 * (1 + jnp.sqrt(1 + 4 * jnp.power(beta[k-1], 2))))
+        gamma = gamma.at[k].set((beta[k-1] - 1) / beta[k])
+
+    gamma = np.asarray(gamma)
+
     problem = PEP()
     # f = problem.declare_function(SmoothConvexFunction, L=L)
     f = problem.declare_function(SmoothStronglyConvexFunction, L=L, mu=mu)
@@ -68,18 +78,20 @@ def pep(K, R, mu, L, t, lambd, verbose=1):
     zs = F.stationary_point()
 
     z0 = problem.set_initial_point()
-
     problem.set_initial_condition((z0 - zs) ** 2 <= R ** 2)
 
     z = [z0 for _ in range(K+1)]
+    w = [z0 for _ in range(K+1)]
     lambd_t = t * lambd
     lambd_t = float(lambd_t)
     t = float(t)
     for i in range(K):
         # yi = z[i] - t * f.gradient(z[i])
         # z[i + 1], _, _ = proximal_step(yi, h, lambd)
-        y = z[i] - t * f.gradient(z[i])
+        y = w[i] - t * f.gradient(w[i])
         z[i + 1], _, _ = proximal_step(y, h, lambd_t)
+        w[i + 1] = z[i + 1] + gamma[i+1] * (z[i + 1] - z[i])
+
 
     problem.set_performance_metric((z[-1] - z[-2]) ** 2)
 
@@ -144,7 +156,7 @@ def lstsq_sol(cfg, A, lambd, x_l, x_u):
     return x_lstsq
 
 
-def ISTA_pep(cfg):
+def FISTA_pep(cfg):
     log.info(cfg)
 
     m, n = cfg.m, cfg.n
@@ -249,7 +261,7 @@ def sparse_coding_b_set(cfg, A):
     return b_set
 
 
-def sparse_coding_ISTA_pep(cfg):
+def sparse_coding_FISTA_pep(cfg):
     # m, n = cfg.m, cfg.n
     # n = cfg.n
     log.info(cfg)
@@ -307,7 +319,7 @@ def sparse_coding_ISTA_pep(cfg):
 
     log.info(pep_rad)
 
-    # ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
+    # FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
 
     taus = []
     times = []
@@ -331,9 +343,9 @@ def sparse_coding_ISTA_pep(cfg):
 
 
 def run(cfg):
-    # ISTA_pep(cfg)
+    # FISTA_pep(cfg)
     if cfg.problem_type == 'random':
-        # random_ISTA_run(cfg)
-        ISTA_pep(cfg)
+        # random_FISTA_run(cfg)
+        FISTA_pep(cfg)
     elif cfg.problem_type == 'sparse_coding':
-        sparse_coding_ISTA_pep(cfg)
+        sparse_coding_FISTA_pep(cfg)

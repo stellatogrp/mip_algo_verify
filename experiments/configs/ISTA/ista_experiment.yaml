@@ -1,23 +1,23 @@
-A_rng_seed: 0
+A_rng_seed: 1000
 # lambd: 1e-2
 # lambd: adaptive
 lambd:
-  val: 0.01  # either a number or 'adaptive'
+  val: 0.005  # either a number or 'adaptive'
   scalar: 0.1  # if val == 'adaptive', then lambda = scalar * infty norm of A.T @ x for x the center of param set
 t: 0.04
-t_rel: 1
-m: 25
-n: 20
+t_rel: 0.5
+m: 20
+n: 15
 mu: 1
 L: 5
 
 x_star:
-  std: 0.5
+  std: 0.25
   rng_seed: 1
   nonzero_prob: 0.1
   num: 100
   epsilon_std: 1e-2
-  A_mask_prob: 0.1
+  A_mask_prob: 0.2
 
 # problem_type: 'random'
 problem_type: 'sparse_coding'
@@ -33,7 +33,7 @@ x:
   u: 10.25
 
 K_min: 1
-K_max: 20
+K_max: 30
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
@@ -41,16 +41,16 @@ obj_scaling:
 warmstart: True
 
 build_from_scratch: False
-theory_bounds: True
-postprocessing: True
-opt_based_tightening: True
-num_obbt_iter: 1
+theory_bounds: False
+postprocessing: False
+opt_based_tightening: False
+num_obbt_iter: 3
 
 mipgap: 0.05
-mipfocus: 3
+mipfocus: 0
 timelimit: 7200
 
-C_norm: 1
+C_norm: 2
 star_bound_M: 1e2
 init_dist_M: 100
 
@@ -60,7 +60,7 @@ exact_conv_relax:
 samples:
   z_seed_offset: 100
   x_seed_offset: 101
-  N: 10000
+  N: 1000
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv

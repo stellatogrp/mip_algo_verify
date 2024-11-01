@@ -750,8 +750,8 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     max_sample_resids = samples(cfg, A, lambd, t, c_z, x_l, x_u)
     log.info(f'max sample resids: {max_sample_resids}')
 
-    max_sample_resids = samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u)
-    log.info(f'max sample resids with diff samples per K: {max_sample_resids}')
+    # max_sample_resids = samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u)
+    # log.info(f'max sample resids with diff samples per K: {max_sample_resids}')
 
     pnorm = cfg.pnorm
     m, n = cfg.m, cfg.n
