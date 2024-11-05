@@ -85,7 +85,7 @@ samples:
   u_seed_offset: 100
   v_seed_offset: 101
   x_seed_offset: 102
-  N: 1000
+  N: 100
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv

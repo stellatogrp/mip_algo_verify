@@ -537,6 +537,8 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         model.setParam('TimeLimit', cfg.timelimit)
         model.setParam('MIPGap', cfg.mipgap)
         model.setParam('MIPFocus', cfg.mipfocus)
+        model.setParam('OBBT', 0)
+        model.setParam('Cuts', 0)
 
         x = model.addMVar(m, lb=x_l, ub=x_u)
         z[0] = model.addMVar(n, lb=c_z, ub=c_z)  # if non singleton, change here
@@ -550,15 +552,8 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         y[k] = model.addMVar(n, lb=y_LB[k], ub=y_UB[k])
         z[k] = model.addMVar(n, lb=z_LB[k], ub=z_UB[k])
 
-        # log.info(y_LB)
-        # log.info(y_UB)
-
-        # log.info(z_LB)
-        # log.info(z_UB)
-
-        # for constr in obj_constraints:
-        #     model.remove(constr)
-        # model.update()
+        # y[k] = model.addMVar(n, lb=-np.inf, ub=np.inf)
+        # z[k] = model.addMVar(n, lb=-np.inf, ub=np.inf)
 
         # affine constraints
         model.addConstr(y[k] == At @ z[k-1] + Bt @ x)
@@ -578,6 +573,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                 if y_LB[k, i] < -lambda_t and y_UB[k, i] > lambda_t:
                     w1[k, i] = model.addVar(vtype=GRB.BINARY)
                     w2[k, i] = model.addVar(vtype=GRB.BINARY)
+                    # add back
                     model.addConstr(z[k][i] >= y[k][i] - lambda_t)
                     model.addConstr(z[k][i] <= y[k][i] + lambda_t)
 
@@ -616,6 +612,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                     w1[k, i] = model.addVar(vtype=GRB.BINARY)
                     model.update()
 
+                    # add back
                     model.addConstr(z[k][i] >= 0)
                     model.addConstr(z[k][i] <= z_UB[k, i]/(y_UB[k, i] - y_LB[k, i])*(y[k][i] - y_LB[k, i]))
                     model.addConstr(z[k][i] >= y[k][i] - lambda_t)
@@ -633,6 +630,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
                     w2[k, i] = model.addVar(vtype=GRB.BINARY)
                     model.update()
 
+                    # add back
                     model.addConstr(z[k][i] <= 0)
                     model.addConstr(z[k][i] >= z_LB[k, i]/(y_LB[k, i] - y_UB[k, i])*(y[k][i]- y_UB[k, i]))
                     model.addConstr(z[k][i] <= y[k][i] + lambda_t)
@@ -655,6 +653,9 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         v = model.addMVar(n, vtype=gp.GRB.BINARY)
         up = model.addMVar(n, ub=jnp.abs(U))
         un = model.addMVar(n, ub=jnp.abs(L))
+
+        # up = model.addMVar(n, ub=np.inf)
+        # un = model.addMVar(n, ub=np.inf)
         # v = {}
         # up = {}
         # un = {}
