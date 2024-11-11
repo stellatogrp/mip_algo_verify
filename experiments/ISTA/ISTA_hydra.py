@@ -537,8 +537,8 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         model.setParam('TimeLimit', cfg.timelimit)
         model.setParam('MIPGap', cfg.mipgap)
         model.setParam('MIPFocus', cfg.mipfocus)
-        model.setParam('OBBT', 0)
-        model.setParam('Cuts', 0)
+        # model.setParam('OBBT', 0)
+        # model.setParam('Cuts', 0)
 
         x = model.addMVar(m, lb=x_l, ub=x_u)
         z[0] = model.addMVar(n, lb=c_z, ub=c_z)  # if non singleton, change here

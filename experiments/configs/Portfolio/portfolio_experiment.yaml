@@ -1,0 +1,32 @@
+reg_type: l2  # 'l2' or 'l1'
+
+n: 4
+d: 3
+gamma: 3
+lambd: 1e-4
+
+z0:
+  type: 'avg_sol'  # 'zero' or 'avg_sol'
+
+data_rng_key: 0
+F_mask_prob: 0.5
+
+mu:
+  l: -0.25
+  u: 0.25
+
+zprev:
+  l: .25
+  u: .25
+
+K_min: 1
+K_max: 3
+pnorm: inf
+obj_scaling:
+  val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
+  default: 1e-3
+warmstart: False
+
+mipgap: 0.05
+mipfocus: 0
+timelimit: 10

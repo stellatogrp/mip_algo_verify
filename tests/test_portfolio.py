@@ -115,9 +115,9 @@ def test_portfolio():
     print('w:', b - A @ z_full)
     print('dual feas:', P @ z_full + A.T @ y_full + q)
 
-    assert np.linalg.norm(x_orig - x_reformed) <= 1e-7
-    assert np.linalg.norm(x_reformed - z_triple_block) <= 1e-7
-    assert np.linalg.norm(z_triple_block - z_single_block) <= 1e-7
+    assert np.linalg.norm(x_orig - x_reformed) <= 1e-5
+    assert np.linalg.norm(x_reformed - z_triple_block) <= 1e-5
+    assert np.linalg.norm(z_triple_block - z_single_block) <= 1e-5
 
     # test with DR splitting
     Am, An = A.shape

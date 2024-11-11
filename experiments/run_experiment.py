@@ -14,6 +14,7 @@ import LP.LP as LP
 import LP.LP_rel_incremental as LP_incr
 import NNQP.NNQP as NNQP
 import NNQP.NNQP_vec as NNQP_vec
+import Portfolio.PortfolioL2 as PortfolioL2
 
 log = logging.getLogger(__name__)
 
@@ -51,12 +52,19 @@ def main_experiment_fista(cfg):
     FISTA_hydra.run(cfg)
 
 
+@hydra.main(version_base='1.2', config_path='configs/Portfolio', config_name='portfolio_experiment.yaml')
+def main_experiment_portfolio(cfg):
+    if cfg.reg_type == 'l2':
+        PortfolioL2.run(cfg)
+
+
 base_dir_map = {
     'LP': 'LP/outputs',
     'NNQP': 'NNQP/outputs',
     'ISTA': 'ISTA/outputs',
     'ISTA_scratch': 'ISTA_scratch/outputs',
     'FISTA': 'FISTA/outputs',
+    'Portfolio': 'Portfolio/outputs',
 }
 
 
@@ -66,6 +74,7 @@ func_driver_map = {
     'ISTA': main_experiment_ista,
     'ISTA_scratch': main_experiment_ista_scratch,
     'FISTA': main_experiment_fista,
+    'Portfolio': main_experiment_portfolio,
 }
 
 
@@ -116,6 +125,10 @@ FISTA_params = [
     ['m=20', 'n=25', 'K_max=50', 'lambd.val=0.01'],
 ]
 
+Portfolio_params = [
+
+]
+
 def main():
     if len(sys.argv) < 3:
         print('not enough command line arguments')
@@ -160,6 +173,9 @@ def main():
 
         if experiment == 'FISTA':
             hydra_tags += FISTA_params[job_idx]
+
+        if experiment == 'PortfolioL2':
+            hydra_tags += Portfolio_params[job_idx]
 
     sys.argv = [sys.argv[0]] + hydra_tags
 

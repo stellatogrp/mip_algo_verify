@@ -46,7 +46,7 @@ postprocessing: False
 opt_based_tightening: False
 num_obbt_iter: 3
 
-mipgap: 0.0001
+mipgap: 0.05
 mipfocus: 3
 timelimit: 7200
 
