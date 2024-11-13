@@ -4,8 +4,10 @@ import cvxpy as cp
 import gurobipy as gp
 import jax
 import jax.numpy as jnp
+import jax.scipy as jsp
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from gurobipy import GRB
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
@@ -96,6 +98,10 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         z_prev = model.addMVar(num_stocks, lb=zprev_lower, ub=zprev_upper)
         model.addConstr(gp.quicksum(z_prev) == 1)
 
+        # TODO: remove after debugging
+        model.addConstr(z_prev == np.array([0, 0, 0, 1]))
+        # model.addConstr(mu == np.array([-.25, -.25, .25, -.25]))
+
         s[0] = model.addMVar(m + n, lb=s0, ub=s0)  # if non singleton, change here
 
         # q[:n] = -(mu + 2 * lambd / n)  # x_prev = 1/n
@@ -154,11 +160,11 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         if pnorm == 1 or pnorm == 'inf':
             obj_constraints.append(model.addConstr(up - un == s[k] - s[k-1]))
 
-            for i in range(n):
+            for i in range(m + n):
                 obj_constraints.append(up[i] <= np.abs(s_UB[k, i] - s_LB[k-1, i]) * vobj[i])
                 obj_constraints.append(un[i] <= np.abs(s_LB[k, i] - s_UB[k-1, i]) * (1 - vobj[i]))
 
-            for i in range(n):
+            for i in range(m + n):
                 if L[i] >= 0:
                     obj_constraints.append(model.addConstr(up[i] == s[k][i] - s[k-1][i]))
                     obj_constraints.append(model.addConstr(un[i] == 0))
@@ -166,6 +172,11 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
                     obj_constraints.append(model.addConstr(un[i] == s[k-1][i] - s[k][i]))
                     obj_constraints.append(model.addConstr(up[i] == 0))
                 else:
+                    # if k == 8 and i == 2:
+                    #     log.info('here')
+                    #     log.info(U[i])
+                    #     log.info(L[i])
+                    #     exit(0)
                     obj_constraints.append(model.addConstr(up[i] - un[i] == s[k][i] - s[k-1][i]))
                     obj_constraints.append(model.addConstr(up[i] <= jnp.abs(U[i]) * vobj[i]))
                     obj_constraints.append(model.addConstr(un[i] <= jnp.abs(L[i]) * (1-vobj[i])))
@@ -174,6 +185,8 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
             model.setObjective(1 / obj_scaling * gp.quicksum(up + un), GRB.MAXIMIZE)
         elif pnorm == 'inf':
             M = jnp.maximum(jnp.max(jnp.abs(U)), jnp.max(jnp.abs(L)))
+            if k == 8:
+                log.info(f'M: {M}')
             q = model.addVar(ub=M)
             gamma = model.addMVar(m + n, vtype=gp.GRB.BINARY)
 
@@ -184,7 +197,7 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
             obj_constraints.append(model.addConstr(gp.quicksum(gamma) == 1))
             model.setObjective(1 / obj_scaling * q, gp.GRB.MAXIMIZE)
 
-        model.update()
+        # model.update()
         model.optimize()
 
         for constr in obj_constraints:
@@ -197,6 +210,13 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
             mipgap = model.MIPGap
         except AttributeError:
             mipgap = 0
+
+        if k == 8:
+            log.info(f'up: {up.X}')
+            log.info(f'un: {un.X}')
+            log.info(f'q: {q.X}')
+            log.info(f'gamma: {gamma.X}')
+            log.info(f'vobj: {vobj.X}')
 
         return model.objVal * obj_scaling, model.objBound * obj_scaling, mipgap, model.Runtime, mu.X, z_prev.X
 
@@ -234,6 +254,9 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
     log.info(c_l)
     log.info(c_u)
 
+    max_sample_resids = samples(cfg, lhs_mat, s0, c_l, c_u)
+    log.info(f'max sample resids: {max_sample_resids}')
+
     utilde_LB = jnp.zeros((K_max + 1, m + n))
     utilde_UB = jnp.zeros((K_max + 1, m + n))
 
@@ -269,6 +292,9 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         # log.info(s_LB)
         # log.info(s_UB)
 
+        s_LB = jnp.clip(s_LB, -2, 2)
+        s_UB = jnp.clip(s_UB, -2, 2)
+
         result, bound, opt_gap, time, mu_val, z_prev_val = ModelNextStep(model, k, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, obj_scaling=obj_scaling)
 
         log.info(result)
@@ -283,11 +309,59 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         if cfg.obj_scaling.val == 'adaptive':
             obj_scaling = result
 
-        log.info(Deltas)
-        log.info(solvetimes)
+        log.info(f'max samples: {max_sample_resids}')
+        log.info(f'Deltas: {Deltas}')
+        log.info(f'solvetimes: {solvetimes}')
         log.info(theory_tighter_fracs)
 
         # TODO: postprocess
+
+        # plotting resids so far
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+        ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
+        ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Fixed-point residual')
+        ax.set_yscale('log')
+        ax.set_title(r'L2 Portfolio')
+
+        ax.legend()
+        plt.tight_layout()
+
+        plt.savefig('resids.pdf')
+
+        plt.clf()
+        plt.cla()
+        plt.close()
+
+    # log.info('debugging K=8')
+    # log.info(mu_val)
+    # log.info(z_prev_val)
+
+    # c = np.hstack([-(mu_val + 2 * lambd * z_prev_val), np.zeros(num_factors), np.asarray(b)])
+    # log.info(f'c: {c}')
+
+    # lu, piv, _ = jax.lax.linalg.lu(lhs_mat)
+    # sk_all, resids = DR_alg(cfg, s0.shape[0], lu, piv, s0, c, cfg.K_max, pnorm=cfg.pnorm)
+    # log.info(sk_all)
+
+    # for k in range(1, K_max+1):
+    #     log.info(f'k={k}')
+    #     log.info(f'true sk: {sk_all[k]}')
+    #     log.info(f'vp sk: {s[k].X}')
+
+    # def inf_norm(x):
+    #     return jnp.max(jnp.abs(x))
+    # k = 8
+    # log.info('last step fp resid:')
+    # log.info(f'from samp: {sk_all[k] - sk_all[k-1]}')
+    # log.info(inf_norm(sk_all[k] - sk_all[k-1]))
+    # log.info(f'from vp: {s[k].X - s[k-1].X}')
+    # log.info(inf_norm(s[k].X - s[k-1].X))
+
+    # model.printQuality()
 
 
 def avg_sol(cfg, D, A, b, mu):
@@ -312,11 +386,69 @@ def avg_sol(cfg, D, A, b, mu):
     ]
     prob = cp.Problem(cp.Minimize(obj), constraints)
     prob.solve()
-
-    # log.info(constraints[0].dual_value)
-
-    # return z.value
     return jnp.hstack([z.value, constraints[0].dual_value])
+
+
+def DR_alg(cfg, n, lu, piv, s0, c, K, pnorm='inf'):
+    sk_all = jnp.zeros((K+1, n))
+    resids = jnp.zeros(K+1)
+
+    sk_all = sk_all.at[0].set(s0)
+
+    # def proj()
+
+    def body_fun(k, val):
+        sk_all, resids = val
+        sk = sk_all[k]
+
+        # ykplus1 = At @ zk + Bt @ x
+        # zkplus1 = soft_threshold(ykplus1, lambda_t)
+
+        utilde_kplus1 = jsp.linalg.lu_solve((lu, piv), sk - c)
+        vkplus1 = 2 * utilde_kplus1 - sk
+        ukplus1 = proj_C(cfg, vkplus1)
+        skplus1 = sk + ukplus1 - utilde_kplus1
+
+        if pnorm == 'inf':
+            resid = jnp.max(jnp.abs(skplus1 - sk))
+        else:
+            resid = jnp.linalg.norm(skplus1 - sk, ord=pnorm)
+
+        sk_all = sk_all.at[k+1].set(skplus1)
+        resids = resids.at[k+1].set(resid)
+        return (sk_all, resids)
+
+    return jax.lax.fori_loop(0, K, body_fun, (sk_all, resids))
+
+
+def samples(cfg, lhs_mat, s0, c_l, c_u):
+    lu, piv, _ = jax.lax.linalg.lu(lhs_mat)  # usage: sol = jsp.linalg.lu_solve((lu, piv), rhs)
+
+    sample_idx = jnp.arange(cfg.samples.N)
+
+    def s_sample(i):
+        return s0
+
+    def c_sample(i):
+        key = jax.random.PRNGKey(cfg.samples.c_seed_offset + i)
+        # TODO add the if, start with box case only
+        return jax.random.uniform(key, shape=c_l.shape, minval=c_l, maxval=c_u)
+
+    s_samples = jax.vmap(s_sample)(sample_idx)
+    c_samples = jax.vmap(c_sample)(sample_idx)
+
+    def dr_resids(i):
+        return DR_alg(cfg, s0.shape[0], lu, piv, s_samples[i], c_samples[i], cfg.K_max, pnorm=cfg.pnorm)
+
+    _, sample_resids = jax.vmap(dr_resids)(sample_idx)
+    log.info(sample_resids)
+    max_sample_resids = jnp.max(sample_resids, axis=0)
+    log.info(max_sample_resids)
+
+    df = pd.DataFrame(sample_resids[:, 1:])  # remove the first column of zeros
+    df.to_csv(cfg.samples.out_fname, index=False, header=False)
+
+    return max_sample_resids[1:]
 
 
 def portfolio_l2(cfg):
@@ -353,6 +485,12 @@ def portfolio_l2(cfg):
 
     mu_l = cfg.mu.l * jnp.ones(n)
     mu_u = cfg.mu.u * jnp.ones(n)
+
+    # model.addConstr(z_prev == np.array([0, 0, 0, 1]))
+    # model.addConstr(mu == np.array([-.25, -.25, .25, -.25]))
+
+    # mu_l = np.array([-.15, -.15, .15, -.15])
+    # mu_u = np.array([-.15, -.15, .15, -.15])
 
     if cfg.z0.type == 'avg_sol':
         key, subkey = jax.random.split(key)

@@ -12,15 +12,15 @@ data_rng_key: 0
 F_mask_prob: 0.5
 
 mu:
-  l: -0.25
-  u: 0.25
+  l: -0.15
+  u: 0.15
 
-zprev:
-  l: .25
-  u: .25
+zprev:  # remember this needs to include values summable to exactly 1 based on n
+  l: 0
+  u: 1
 
 K_min: 1
-K_max: 3
+K_max: 8
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
@@ -30,3 +30,11 @@ warmstart: False
 mipgap: 0.05
 mipfocus: 0
 timelimit: 10
+
+samples:
+  s_seed_offset: 100
+  c_seed_offset: 101
+  N: 1000
+  init_dist_N: 100
+  out_fname: sample_resids.csv
+  max_out_fname: max_sample_resids.csv
