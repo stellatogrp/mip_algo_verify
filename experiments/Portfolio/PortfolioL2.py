@@ -58,29 +58,148 @@ def BoundPreprocessing(cfg, k, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, 
     v_LB = v_LB.at[k].set(vk_LB)
     v_UB = v_UB.at[k].set(vk_UB)
 
-    # log.info(vk_LB)
-    # log.info(vk_UB)
-
     uk_LB = proj_C(cfg, vk_LB)
     uk_UB = proj_C(cfg, vk_UB)
-    # log.info(uk_LB)
-    # log.info(uk_UB)
 
     u_LB = u_LB.at[k].set(uk_LB)
-    u_UB = u_LB.at[k].set(uk_UB)
+    u_UB = u_UB.at[k].set(uk_UB)
 
     sA = jnp.block([[jnp.eye(m_plus_n), jnp.eye(m_plus_n), -jnp.eye(m_plus_n)]])
     s_rhs_l = jnp.hstack([s_LB[k-1], u_LB[k], utilde_LB[k]])
     s_rhs_u = jnp.hstack([s_UB[k-1], u_UB[k], utilde_UB[k]])
     sk_LB, sk_UB = interval_bound_prop(sA, s_rhs_l, s_rhs_u)
 
-    # log.info(sk_LB)
-    # log.info(sk_UB)
-
     s_LB = s_LB.at[k].set(sk_LB)
     s_UB = s_UB.at[k].set(sk_UB)
 
     return utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB
+
+
+def BuildRelaxedModel(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u):
+    model = gp.Model()
+    model.Params.OutputFlag = 0
+
+    # jnp.linalg.solve(lhs_mat, utilde_A)
+    # lhs_mat_inv = np.linalg.solve(lhs_mat, np.eye(lhs_mat.shape[0]))
+
+    m, n = A.shape
+    num_stocks, num_factors = cfg.n, cfg.d
+
+    # c = model.addMVar(m + n, lb=c_l, ub=c_u)
+    z_prev = model.addMVar(num_stocks, lb=zprev_lower, ub=zprev_upper)
+    mu = model.addMVar(num_stocks, lb=mu_l, ub=mu_u)
+
+    model.addConstr(gp.quicksum(z_prev) == 1)
+    c = gp.hstack([-(mu + 2 * cfg.lambd * z_prev), np.zeros(num_factors), np.asarray(b)])
+
+    utilde = model.addMVar((K+1, m+n), lb=utilde_LB[:K+1], ub=utilde_UB[:K+1])
+    v = model.addMVar((K+1, m+n), lb=v_LB[:K+1], ub=v_UB[:K+1])
+    u = model.addMVar((K+1, m+n), lb=u_LB[:K+1], ub=u_UB[:K+1])
+    s = model.addMVar((K+1, m+n), lb=s_LB[:K+1], ub=s_UB[:K+1])
+
+    for k in range(1, K+1):
+        model.addConstr(lhs_mat @ utilde[k] == (s[k-1] - c))
+        model.addConstr(s[k] == s[k-1] + u[k] - utilde[k])
+        model.addConstr(v[k] == 2 * utilde[k] - s[k-1])
+
+        # add relus
+        for i in range(n + num_factors+1):
+            model.addConstr(u[k][i] == v[k][i])
+
+        for i in range(n + num_factors + 1, n + m):
+            # log.info(i)
+            if v_UB[k, i] <= 0:
+                model.addConstr(u[k][i] == 0)
+            elif v_LB[k, i] > 0:
+                model.addConstr(u[k][i] == v[k][i])
+            else:
+                model.addConstr(u[k][i] >= v[k][i])
+                model.addConstr(u[k][i] <= v_UB[k, i] / (v_UB[k, i] - v_LB[k, i]) * (v[k][i] - v_LB[k, i]))
+
+    return model, utilde, v, s
+
+
+def BoundTightUtilde(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u):
+    log.info('bound tightening for utilde')
+    m, n = A.shape
+    model, utilde, _, _ = BuildRelaxedModel(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+
+    for sense in [GRB.MINIMIZE, GRB.MAXIMIZE]:
+        for i in range(m + n):
+            model.setObjective(utilde[K, i], sense)
+            model.update()
+            model.optimize()
+
+            if model.status != GRB.OPTIMAL:
+                log.info(f'bound tighting failed, GRB model status: {model.status}')
+                log.info(f'(k, i) = {(K, i)}')
+
+            if sense == GRB.MAXIMIZE:
+                utilde_UB = utilde_UB.at[K, i].set(model.objVal)
+            else:
+                utilde_LB = utilde_LB.at[K, i].set(model.objVal)
+
+            if utilde_LB[K, i] > utilde_UB[K, i]:
+                raise ValueError('Infeasible bounds', sense, i, K, utilde_LB[K, i], utilde_UB[K, i])
+
+    return utilde_LB, utilde_UB
+
+
+def BoundTightVU(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u):
+    log.info('bound tightening for v then u')
+    m, n = A.shape
+    model, _, v, _ = BuildRelaxedModel(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+
+    for sense in [GRB.MINIMIZE, GRB.MAXIMIZE]:
+        for i in range(m + n):
+            model.setObjective(v[K, i], sense)
+            model.update()
+            model.optimize()
+
+            if model.status != GRB.OPTIMAL:
+                log.info(f'bound tighting failed at v, GRB model status: {model.status}')
+                log.info(f'(k, i) = {(K, i)}')
+                exit(0)
+
+            if sense == GRB.MAXIMIZE:
+                v_UB = v_UB.at[K, i].set(model.objVal)
+            else:
+                v_LB = v_LB.at[K, i].set(model.objVal)
+
+            if v_LB[K, i] > v_UB[K, i]:
+                raise ValueError('Infeasible bounds', sense, i, K, v_LB[K, i], v_UB[K, i])
+
+    u_UB = u_UB.at[K].set(proj_C(cfg, v_UB[K]))
+    u_LB = u_LB.at[K].set(proj_C(cfg, v_LB[K]))
+
+    return v_LB, v_UB, u_LB, u_UB
+
+
+def BoundTightS(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u):
+    log.info('bound tightening for s')
+    m, n = A.shape
+    model, _, _, s = BuildRelaxedModel(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+
+    for sense in [GRB.MINIMIZE, GRB.MAXIMIZE]:
+        for i in range(m + n):
+            model.setObjective(s[K, i], sense)
+            model.update()
+            model.optimize()
+
+            if model.status != GRB.OPTIMAL:
+                log.info(f'bound tighting failed at s, GRB model status: {model.status}')
+                log.info(f'(k, i) = {(K, i)}')
+                exit(0)
+
+            if sense == GRB.MAXIMIZE:
+                s_UB = s_UB.at[K, i].set(model.objVal)
+            else:
+                s_LB = s_LB.at[K, i].set(model.objVal)
+
+            if s_LB[K, i] > s_UB[K, i]:
+                raise ValueError('Infeasible bounds', sense, i, K, s_LB[K, i], s_UB[K, i])
+
+    return s_LB, s_UB
 
 
 def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
@@ -97,10 +216,6 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         mu = model.addMVar(num_stocks, lb=mu_l, ub=mu_u)
         z_prev = model.addMVar(num_stocks, lb=zprev_lower, ub=zprev_upper)
         model.addConstr(gp.quicksum(z_prev) == 1)
-
-        # TODO: remove after debugging
-        model.addConstr(z_prev == np.array([0, 0, 0, 1]))
-        # model.addConstr(mu == np.array([-.25, -.25, .25, -.25]))
 
         s[0] = model.addMVar(m + n, lb=s0, ub=s0)  # if non singleton, change here
 
@@ -140,10 +255,6 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
                 model.addConstr(u[k][i] == vk[i])
             else:
                 w[k, i] = model.addVar(vtype=gp.GRB.BINARY)
-                # model.addConstr(u[k][i] >= utilde[i])
-                # model.addConstr(u[k][i] <= utilde_UB[k, i] / (utilde_UB[k, i] - utilde_LB[k, i]) * (utilde[i] - utilde_LB[k, i]))
-                # model.addConstr(u[k][i] <= utilde[i] - utilde_LB[k, i] * (1 - w[k, i]))
-                # model.addConstr(u[k][i] <= utilde_UB[k, i] * w[k, i])
                 model.addConstr(u[k][i] >= vk[i])
                 model.addConstr(u[k][i] <= v_UB[k, i] / (v_UB[k, i] - v_LB[k, i]) * (vk[i] - v_LB[k, i]))
                 model.addConstr(u[k][i] <= vk[i] - v_LB[k, i] * (1 - w[k, i]))
@@ -172,11 +283,6 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
                     obj_constraints.append(model.addConstr(un[i] == s[k-1][i] - s[k][i]))
                     obj_constraints.append(model.addConstr(up[i] == 0))
                 else:
-                    # if k == 8 and i == 2:
-                    #     log.info('here')
-                    #     log.info(U[i])
-                    #     log.info(L[i])
-                    #     exit(0)
                     obj_constraints.append(model.addConstr(up[i] - un[i] == s[k][i] - s[k-1][i]))
                     obj_constraints.append(model.addConstr(up[i] <= jnp.abs(U[i]) * vobj[i]))
                     obj_constraints.append(model.addConstr(un[i] <= jnp.abs(L[i]) * (1-vobj[i])))
@@ -185,8 +291,6 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
             model.setObjective(1 / obj_scaling * gp.quicksum(up + un), GRB.MAXIMIZE)
         elif pnorm == 'inf':
             M = jnp.maximum(jnp.max(jnp.abs(U)), jnp.max(jnp.abs(L)))
-            if k == 8:
-                log.info(f'M: {M}')
             q = model.addVar(ub=M)
             gamma = model.addMVar(m + n, vtype=gp.GRB.BINARY)
 
@@ -197,7 +301,7 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
             obj_constraints.append(model.addConstr(gp.quicksum(gamma) == 1))
             model.setObjective(1 / obj_scaling * q, gp.GRB.MAXIMIZE)
 
-        # model.update()
+        model.update()
         model.optimize()
 
         for constr in obj_constraints:
@@ -211,13 +315,6 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         except AttributeError:
             mipgap = 0
 
-        if k == 8:
-            log.info(f'up: {up.X}')
-            log.info(f'un: {un.X}')
-            log.info(f'q: {q.X}')
-            log.info(f'gamma: {gamma.X}')
-            log.info(f'vobj: {vobj.X}')
-
         return model.objVal * obj_scaling, model.objBound * obj_scaling, mipgap, model.Runtime, mu.X, z_prev.X
 
     pnorm = cfg.pnorm
@@ -226,8 +323,8 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
     gamma, lambd = cfg.gamma, cfg.lambd
     m, n = A.shape
 
-    zprev_lower = cfg.zprev.l
-    zprev_upper = cfg.zprev.u
+    zprev_lower = cfg.zprev.l * jnp.ones(num_stocks)
+    zprev_upper = cfg.zprev.u * jnp.ones(num_stocks)
 
     P = 2 * jnp.block([
         [gamma * D + lambd * jnp.eye(num_stocks), jnp.zeros((num_stocks, num_factors))],
@@ -281,19 +378,18 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
 
     obj_scaling = cfg.obj_scaling.default
     for k in range(1, K_max+1):
+        log.info(f'---k={k}---')
         utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB = BoundPreprocessing(cfg, k, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, c_l, c_u)
+
 
         # TODO: insert assertion errors
 
         # TODO: add theory bound
 
-        # TODO: add obbt
-
-        # log.info(s_LB)
-        # log.info(s_UB)
-
-        s_LB = jnp.clip(s_LB, -2, 2)
-        s_UB = jnp.clip(s_UB, -2, 2)
+        if cfg.opt_based_tightening:
+            utilde_LB, utilde_UB = BoundTightUtilde(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+            v_LB, v_UB, u_LB, u_UB = BoundTightVU(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+            s_LB, s_UB = BoundTightS(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
 
         result, bound, opt_gap, time, mu_val, z_prev_val = ModelNextStep(model, k, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, obj_scaling=obj_scaling)
 
@@ -314,7 +410,15 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         log.info(f'solvetimes: {solvetimes}')
         log.info(theory_tighter_fracs)
 
-        # TODO: postprocess
+        if cfg.postprocessing:
+            Dk = jnp.sum(jnp.array(Delta_bounds))
+            for i in range(n):
+                s_LB = s_LB.at[k, i].set(max(s0[i] - Dk, s_LB[k, i]))
+                s_UB = s_UB.at[k, i].set(min(s0[i] + Dk, s_UB[k, i]))
+                s[k][i].LB = s_LB[k, i]
+                s[k][i].UB = s_UB[k, i]
+
+        model.update()
 
         # plotting resids so far
         fig, ax = plt.subplots()
@@ -335,33 +439,6 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         plt.clf()
         plt.cla()
         plt.close()
-
-    # log.info('debugging K=8')
-    # log.info(mu_val)
-    # log.info(z_prev_val)
-
-    # c = np.hstack([-(mu_val + 2 * lambd * z_prev_val), np.zeros(num_factors), np.asarray(b)])
-    # log.info(f'c: {c}')
-
-    # lu, piv, _ = jax.lax.linalg.lu(lhs_mat)
-    # sk_all, resids = DR_alg(cfg, s0.shape[0], lu, piv, s0, c, cfg.K_max, pnorm=cfg.pnorm)
-    # log.info(sk_all)
-
-    # for k in range(1, K_max+1):
-    #     log.info(f'k={k}')
-    #     log.info(f'true sk: {sk_all[k]}')
-    #     log.info(f'vp sk: {s[k].X}')
-
-    # def inf_norm(x):
-    #     return jnp.max(jnp.abs(x))
-    # k = 8
-    # log.info('last step fp resid:')
-    # log.info(f'from samp: {sk_all[k] - sk_all[k-1]}')
-    # log.info(inf_norm(sk_all[k] - sk_all[k-1]))
-    # log.info(f'from vp: {s[k].X - s[k-1].X}')
-    # log.info(inf_norm(s[k].X - s[k-1].X))
-
-    # model.printQuality()
 
 
 def avg_sol(cfg, D, A, b, mu):
@@ -390,6 +467,9 @@ def avg_sol(cfg, D, A, b, mu):
 
 
 def DR_alg(cfg, n, lu, piv, s0, c, K, pnorm='inf'):
+    utildek_all = jnp.zeros((K+1, n))
+    vk_all = jnp.zeros((K+1, n))
+    uk_all = jnp.zeros((K+1, n))
     sk_all = jnp.zeros((K+1, n))
     resids = jnp.zeros(K+1)
 
@@ -398,7 +478,8 @@ def DR_alg(cfg, n, lu, piv, s0, c, K, pnorm='inf'):
     # def proj()
 
     def body_fun(k, val):
-        sk_all, resids = val
+        # sk_all, resids = val
+        utildek_all, vk_all, uk_all, sk_all, resids = val
         sk = sk_all[k]
 
         # ykplus1 = At @ zk + Bt @ x
@@ -414,11 +495,16 @@ def DR_alg(cfg, n, lu, piv, s0, c, K, pnorm='inf'):
         else:
             resid = jnp.linalg.norm(skplus1 - sk, ord=pnorm)
 
+        utildek_all = utildek_all.at[k+1].set(utilde_kplus1)
+        vk_all = vk_all.at[k+1].set(vkplus1)
+        uk_all = uk_all.at[k+1].set(ukplus1)
         sk_all = sk_all.at[k+1].set(skplus1)
         resids = resids.at[k+1].set(resid)
-        return (sk_all, resids)
+        # return (sk_all, resids)
+        return (utildek_all, vk_all, uk_all, sk_all, resids)
 
-    return jax.lax.fori_loop(0, K, body_fun, (sk_all, resids))
+    # return jax.lax.fori_loop(0, K, body_fun, (sk_all, resids))
+    return jax.lax.fori_loop(0, K, body_fun, (utildek_all, vk_all, uk_all, sk_all, resids))
 
 
 def samples(cfg, lhs_mat, s0, c_l, c_u):
@@ -440,7 +526,7 @@ def samples(cfg, lhs_mat, s0, c_l, c_u):
     def dr_resids(i):
         return DR_alg(cfg, s0.shape[0], lu, piv, s_samples[i], c_samples[i], cfg.K_max, pnorm=cfg.pnorm)
 
-    _, sample_resids = jax.vmap(dr_resids)(sample_idx)
+    _, _, _, _, sample_resids = jax.vmap(dr_resids)(sample_idx)
     log.info(sample_resids)
     max_sample_resids = jnp.max(sample_resids, axis=0)
     log.info(max_sample_resids)
