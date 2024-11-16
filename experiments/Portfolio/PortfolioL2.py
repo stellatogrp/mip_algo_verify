@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from gurobipy import GRB
+from tqdm import trange
 
 jnp.set_printoptions(precision=5)  # Print few decimal places
 jnp.set_printoptions(suppress=True)  # Suppress scientific notation
@@ -73,6 +74,83 @@ def BoundPreprocessing(cfg, k, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, 
     s_UB = s_UB.at[k].set(sk_UB)
 
     return utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB
+
+
+def sample_init_rad(cfg, P, A, b, s0, zprev_lower, zprev_upper, mu_l, mu_u, lambd):
+    sample_idx = jnp.arange(cfg.samples.N)
+
+    def s_sample(i):
+        return s0
+
+    def c_sample(i):
+        key = jax.random.PRNGKey(cfg.samples.c_seed_offset + i)
+
+        key, subkey = jax.random.split(key)
+        mu = jax.random.uniform(subkey, shape=mu_l.shape, minval=mu_l, maxval=mu_u)
+        # TODO add the if, start with box case only
+        # return jax.random.uniform(key, shape=c_l.shape, minval=c_l, maxval=c_u)
+        if cfg.zprev.l == 0:
+            z_prev = sample_simplex(zprev_lower.shape[0], key)
+        else:
+            z_prev = jax.random.uniform(key, shape=zprev_lower.shape, minval=zprev_lower, maxval=zprev_upper)
+        c = jnp.hstack([-(mu + 2 * lambd * z_prev), jnp.zeros(cfg.d), b])
+        return c
+
+    # s_samples = jax.vmap(s_sample)(sample_idx)
+    c_samples = jax.vmap(c_sample)(sample_idx)
+    distances = jnp.zeros(cfg.samples.init_dist_N)
+    Am, An = A.shape
+
+    for i in trange(cfg.samples.init_dist_N):
+        z = cp.Variable(An)
+        s = cp.Variable(Am)
+        c_samp = c_samples[i]
+        q = c_samp[:An]
+        b = c_samp[An:]
+
+        obj = cp.quad_form(z, P) + q.T @ z
+
+        constraints = [
+            A @ z + s == b,
+            s[:cfg.d+1] == 0,
+            s[cfg.d+1:] >= 0,
+        ]
+
+        prob = cp.Problem(cp.Minimize(obj), constraints)
+        prob.solve()
+
+        cp_sol = np.hstack([z.value, constraints[0].dual_value])
+
+        distances = distances.at[i].set(np.linalg.norm(cp_sol - s0, ord=cfg.C_norm))
+
+    log.info(distances)
+    return jnp.max(distances)
+
+
+def compute_init_rad(cfg, P, A, b, s0, zprev_lower, zprev_upper, mu_l, mu_u, lambd):
+    # TODO: add the l1 milp
+    return sample_init_rad(cfg, P, A, b, s0, zprev_lower, zprev_upper, mu_l, mu_u, lambd)
+
+
+def theory_bounds(k, R, s_LB, s_UB):
+    log.info(f'-theory bound for k={k}-')
+
+    const = 2 * R / np.sqrt(k)
+    n = s_LB.shape[1]
+
+    theory_tight_count = 0
+    for i in range(n):
+        if s_LB[k-1, i] - const > s_LB[k, i]:
+            theory_tight_count += 1
+            log.info(f'min, before: {s_LB[k, i]}, after {s_LB[k-1, i] - const}')
+        s_LB = s_LB.at[k, i].set(max(s_LB[k, i], s_LB[k-1, i] - const))
+
+        if s_UB[k-1, i] + const < s_UB[k, i]:
+            theory_tight_count += 1
+            log.info(f'max, before: {s_UB[k, i]}, after {s_UB[k-1, i] + const}')
+        s_UB = s_UB.at[k, i].set(min(s_UB[k, i], s_UB[k-1, i] + const))
+
+    return s_LB, s_UB, theory_tight_count / (2 * n)
 
 
 def BuildRelaxedModel(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u):
@@ -351,7 +429,7 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
     log.info(c_l)
     log.info(c_u)
 
-    max_sample_resids = samples(cfg, lhs_mat, s0, c_l, c_u)
+    max_sample_resids = samples(cfg, lhs_mat, s0, c_l, c_u, zprev_lower, zprev_upper, mu_l, mu_u, lambd, b)
     log.info(f'max sample resids: {max_sample_resids}')
 
     utilde_LB = jnp.zeros((K_max + 1, m + n))
@@ -376,20 +454,25 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
     theory_tighter_fracs = []
     # c_out = jnp.zeros((K_max, m+n))
 
+    #
+    R = compute_init_rad(cfg, P, A, b, s0, zprev_lower, zprev_upper, mu_l, mu_u, lambd)
     obj_scaling = cfg.obj_scaling.default
     for k in range(1, K_max+1):
         log.info(f'---k={k}---')
         utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB = BoundPreprocessing(cfg, k, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, c_l, c_u)
 
-
         # TODO: insert assertion errors
 
         # TODO: add theory bound
+        if cfg.theory_bounds:
+            s_LB, s_UB, theory_tight_frac = theory_bounds(k, R, s_LB, s_UB)
+            theory_tighter_fracs.append(theory_tight_frac)
 
         if cfg.opt_based_tightening:
-            utilde_LB, utilde_UB = BoundTightUtilde(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
-            v_LB, v_UB, u_LB, u_UB = BoundTightVU(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
-            s_LB, s_UB = BoundTightS(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+            for _ in range(cfg.num_obbt_iter):
+                utilde_LB, utilde_UB = BoundTightUtilde(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+                v_LB, v_UB, u_LB, u_UB = BoundTightVU(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
+                s_LB, s_UB = BoundTightS(cfg, k, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u)
 
         result, bound, opt_gap, time, mu_val, z_prev_val = ModelNextStep(model, k, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, obj_scaling=obj_scaling)
 
@@ -405,11 +488,6 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         if cfg.obj_scaling.val == 'adaptive':
             obj_scaling = result
 
-        log.info(f'max samples: {max_sample_resids}')
-        log.info(f'Deltas: {Deltas}')
-        log.info(f'solvetimes: {solvetimes}')
-        log.info(theory_tighter_fracs)
-
         if cfg.postprocessing:
             Dk = jnp.sum(jnp.array(Delta_bounds))
             for i in range(n):
@@ -419,6 +497,22 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
                 s[k][i].UB = s_UB[k, i]
 
         model.update()
+
+        df = pd.DataFrame(Deltas)  # remove the first column of zeros
+        df.to_csv('resids.csv', index=False, header=False)
+
+        df = pd.DataFrame(Delta_bounds)
+        df.to_csv('resid_bounds.csv', index=False, header=False)
+
+        df = pd.DataFrame(Delta_gaps)
+        df.to_csv('resid_mip_gaps.csv', index=False, header=False)
+
+        df = pd.DataFrame(solvetimes)
+        df.to_csv('solvetimes.csv', index=False, header=False)
+
+        if cfg.theory_bounds:
+            df = pd.DataFrame(theory_tighter_fracs)
+            df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
         # plotting resids so far
         fig, ax = plt.subplots()
@@ -439,6 +533,27 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         plt.clf()
         plt.cla()
         plt.close()
+
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
+        # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Solvetime (s)')
+        ax.set_yscale('log')
+        ax.set_title(r'L1 Portfolio')
+
+        ax.legend()
+
+        plt.savefig('times.pdf')
+        plt.clf()
+        plt.cla()
+        plt.close()
+
+        log.info(f'max_sample_resids: {max_sample_resids}')
+        log.info(f'Deltas: {Deltas}')
+        log.info(f'times: {solvetimes}')
+        log.info(f'theory tighter fracs: {theory_tighter_fracs}')
 
 
 def avg_sol(cfg, D, A, b, mu):
@@ -507,7 +622,22 @@ def DR_alg(cfg, n, lu, piv, s0, c, K, pnorm='inf'):
     return jax.lax.fori_loop(0, K, body_fun, (utildek_all, vk_all, uk_all, sk_all, resids))
 
 
-def samples(cfg, lhs_mat, s0, c_l, c_u):
+def sample_simplex(n, key):
+    intervals = jax.random.uniform(key, shape=(n-1,))
+    intervals = jnp.sort(intervals)
+    all_vals = jnp.zeros(n+1)
+    all_vals = all_vals.at[1:n].set(intervals)
+    all_vals = all_vals.at[n].set(1)
+    # log.info(all_vals)
+    x = np.zeros(n)
+
+    def body_fun(i, val):
+        return val.at[i].set(all_vals[i+1] - all_vals[i])
+
+    return jax.lax.fori_loop(0, n, body_fun, x)
+
+
+def samples(cfg, lhs_mat, s0, c_l, c_u, zprev_lower, zprev_upper, mu_l, mu_u, lambd, b):
     lu, piv, _ = jax.lax.linalg.lu(lhs_mat)  # usage: sol = jsp.linalg.lu_solve((lu, piv), rhs)
 
     sample_idx = jnp.arange(cfg.samples.N)
@@ -515,10 +645,21 @@ def samples(cfg, lhs_mat, s0, c_l, c_u):
     def s_sample(i):
         return s0
 
+    # c = gp.hstack([-(mu + 2 * lambd * z_prev), np.zeros(num_factors), np.asarray(b)])
+
     def c_sample(i):
         key = jax.random.PRNGKey(cfg.samples.c_seed_offset + i)
+
+        key, subkey = jax.random.split(key)
+        mu = jax.random.uniform(subkey, shape=mu_l.shape, minval=mu_l, maxval=mu_u)
         # TODO add the if, start with box case only
-        return jax.random.uniform(key, shape=c_l.shape, minval=c_l, maxval=c_u)
+        # return jax.random.uniform(key, shape=c_l.shape, minval=c_l, maxval=c_u)
+        if cfg.zprev.l == 0:
+            z_prev = sample_simplex(zprev_lower.shape[0], key)
+        else:
+            z_prev = jax.random.uniform(key, shape=zprev_lower.shape, minval=zprev_lower, maxval=zprev_upper)
+        c = jnp.hstack([-(mu + 2 * lambd * z_prev), jnp.zeros(cfg.d), b])
+        return c
 
     s_samples = jax.vmap(s_sample)(sample_idx)
     c_samples = jax.vmap(c_sample)(sample_idx)

@@ -159,39 +159,112 @@ def test_portfolio():
     print('dual feas:', P @ z_DR + A.T @ y_full + q)
 
 
-# def test_portfolio_nonnegDR():
-#     n = 3
-#     d = 2
-#     gamma = 3
-#     lambd = 1e-4
+def test_portfolio_l1():
+    print('----testing l1----')
+    n = 10
+    d = 3
+    gamma = 5
+    alpha = 1 / gamma
+    lambd = 1
 
-#     np.random.seed(3)
-#     F = np.random.normal(size=(n, d))
-#     Fmask = np.random.randint(0, high=2, size=(n, d))
-#     print(Fmask)
-#     F = np.multiply(F, Fmask)
-#     Ddiag = np.random.uniform(high=np.sqrt(d), size=(n, ))
-#     D = np.diag(Ddiag)
+    np.random.seed(3)
+    F = np.random.normal(size=(n, d))
+    Fmask = np.random.randint(0, high=2, size=(n, d))
+    F = np.multiply(F, Fmask)
+    Ddiag = np.random.uniform(high=np.sqrt(d), size=(n, ))
+    D = np.diag(Ddiag)
 
-#     mu = np.random.normal(size=(n,))
-#     Sigma = F @ F.T + D
-#     x_prev = 1/n * np.ones(n)
+    mu = np.random.normal(size=(n,))
+    Sigma = F @ F.T + D
+    x_prev = 1/n * np.ones(n)
 
-#     # reformed
-#     x = cp.Variable(n)
-#     y = cp.Variable(d)
-#     obj = cp.quad_form(x, gamma * D + lambd * np.eye(n)) + gamma * cp.sum_squares(y) - (mu + 2 * lambd * x_prev) @ x
-#     constraints = [cp.sum(x) == 1, x >= 0, y == F.T @ x]
-#     prob = cp.Problem(cp.Minimize(obj), constraints)
-#     prob.solve()
-#     x_reformed = x.value
-#     print(x_reformed)
+    # original
+    x = cp.Variable(n)
+    obj = mu.T @ x - gamma * cp.quad_form(x, Sigma) - lambd * cp.norm(x - x_prev, 1)
+    constraints = [cp.sum(x) == 1, x >= 0]
+    prob = cp.Problem(cp.Maximize(obj), constraints)
+    prob.solve()
+    x_orig = x.value
 
-#     # block reformed
-#     z = cp.Variable(n + d)
-#     P = 2 * np.block([
-#         [gamma * D + lambd * np.eye(n), np.zeros((n, d))],
-#         [np.zeros((d, n)), gamma * np.eye(d)]
-#     ])
-#     q = np.zeros(n + d)
-#     q[:n] = -(mu + 2 * lambd * x_prev)
+    print(x_orig)
+
+    # reformed
+    z = cp.Variable(2 * n + d)
+
+    A = np.block([
+        [F.T, -np.eye(d), np.zeros((d, n))],
+        [np.ones((1, n)), np.zeros((1, d)), np.zeros((1, n))],
+        [np.eye(n), np.zeros((n, d)), -np.eye(n)],
+        [-np.eye(n), np.zeros((n, d)), -np.eye(n)],
+        [-np.eye(n), np.zeros((n, d)), np.zeros((n, n))]
+    ])
+
+    print(A.shape)
+    print(3 * n + d + 1)
+    print(2 * n + d)
+
+    b = np.hstack([np.zeros(d), 1, x_prev, -x_prev, np.zeros(n)])
+
+    s = cp.Variable(3 * n + d + 1)
+
+    q = np.hstack([-alpha * mu, np.zeros(d), alpha * lambd * np.ones(n)])
+    print(q.shape)
+
+    # P = 2 * np.block([
+    #     [gamma * D + lambd * np.eye(n), np.zeros((n, d))],
+    #     [np.zeros((d, n)), gamma * np.eye(d)]
+    # ])
+
+    P = 2 * np.block([
+        [D, np.zeros((n, d)), np.zeros((n, n))],
+        [np.zeros((d, n)), np.eye(d), np.zeros((d, n))],
+        [np.zeros((n, n)), np.zeros((n, d)), np.zeros((n, n))]
+    ])
+
+    obj = .5 * cp.quad_form(z, P) + q @ z
+    constraints = [
+        A @ z + s == b,
+        s[:d+1] == 0,
+        s[d+1:] >= 0,
+    ]
+
+    prob = cp.Problem(cp.Minimize(obj), constraints)
+    prob.solve()
+    print(z.value)
+
+    # z_full = z.value
+    # y_full = constraints[0].dual_value
+
+    assert np.linalg.norm(x_orig - z.value[:n]) <= 1e-5
+
+    print('solving with DR')
+
+    Am, An = A.shape
+    M = np.block([
+        [P, A.T],
+        [-A, np.zeros((Am, Am))]
+    ])
+    lhs = np.eye(Am + An) + M
+    c = np.hstack([q, b])
+    sk = np.zeros(Am + An)
+    # sk = np.hstack([z.value, y_full])
+
+    def proj(v):
+        l = Am + An - (3 * n)
+        u = Am + An
+        v[l:u] = np.maximum(v[l:u], 0)
+        return v
+
+    K = 1000
+    for _ in range(K):
+        # print('-')
+        # print(sk - c)
+        utilde = np.linalg.solve(lhs, sk - c)
+
+        # print(utilde)
+        # print(2*utilde - sk)
+        u = proj(2 * utilde - sk)
+        # print(u)
+        sk = sk + u - utilde
+
+    print(sk)

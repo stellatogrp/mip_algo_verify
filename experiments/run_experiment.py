@@ -14,6 +14,7 @@ import LP.LP as LP
 import LP.LP_rel_incremental as LP_incr
 import NNQP.NNQP as NNQP
 import NNQP.NNQP_vec as NNQP_vec
+import Portfolio.PortfolioL1 as PortfolioL1
 import Portfolio.PortfolioL2 as PortfolioL2
 
 log = logging.getLogger(__name__)
@@ -56,6 +57,8 @@ def main_experiment_fista(cfg):
 def main_experiment_portfolio(cfg):
     if cfg.reg_type == 'l2':
         PortfolioL2.run(cfg)
+    elif cfg.reg_type == 'l1':
+        PortfolioL1.run(cfg)
 
 
 base_dir_map = {

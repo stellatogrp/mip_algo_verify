@@ -1,9 +1,15 @@
 reg_type: l2  # 'l2' or 'l1'
 
 n: 10
-d: 5
+d: 3
 gamma: 3
-lambd: 1e-4
+lambd: 0.1
+
+gamma_l: 3
+gamma_u: 3
+
+lambd_l: 0.1
+lambd_u: 0.1
 
 z0:
   type: 'avg_sol'  # 'zero' or 'avg_sol'
@@ -27,14 +33,21 @@ obj_scaling:
   default: 1e-3
 warmstart: False
 
-theory_bounds: False
-postprocessing: False
+theory_bounds: True
+postprocessing: True
 opt_based_tightening: True
 num_obbt_iter: 3
 
 mipgap: 0.05
 mipfocus: 0
 timelimit: 100
+
+C_norm: 1
+star_bound_M: 1e2
+init_dist_M: 100
+
+exact_conv_relax:
+  use_in_l1_rel: False
 
 samples:
   s_seed_offset: 100
