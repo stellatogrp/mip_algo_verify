@@ -1,6 +1,6 @@
-reg_type: l1  # 'l2' or 'l1'
+reg_type: l2  # 'l2' or 'l1'
 
-n: 10
+n: 8
 d: 3
 gamma: 3
 lambd: 0.1
@@ -23,11 +23,11 @@ mu:
 
 zprev:  # remember this needs to include values summable to exactly 1 based on n
   l: 0
-  u: 0.2
-  incl_upper_bound: False  # set true when u < 1
+  u: 1.
+  incl_upper_bound: False # set true when u < 1
 
 K_min: 1
-K_max: 4
+K_max: 30
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
@@ -41,14 +41,14 @@ num_obbt_iter: 3
 
 mipgap: 0.05
 mipfocus: 0
-timelimit: 100
+timelimit: 7200
 
 C_norm: 1
 star_bound_M: 1e2
 init_dist_M: 100
 
 exact_conv_relax:
-  use_in_l1_rel: False
+  use_in_l1_rel: True
 
 samples:
   s_seed_offset: 100

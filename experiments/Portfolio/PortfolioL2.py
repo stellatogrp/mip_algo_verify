@@ -1,3 +1,4 @@
+import copy
 import logging
 
 import cvxpy as cp
@@ -154,6 +155,125 @@ def theory_bounds(k, R, s_LB, s_UB):
         s_UB = s_UB.at[k, i].set(min(s_UB[k, i], s_UB[k-1, i] + const))
 
     return s_LB, s_UB, theory_tight_count / (2 * n)
+
+
+def compute_lI(w, x, Lhat, Uhat, I, Icomp):
+    if I.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Uhat))
+    if Icomp.shape[0] == 0:
+        return jnp.sum(jnp.multiply(w, Lhat))
+
+    w_I = w[I]
+    w_Icomp = w[Icomp]
+
+    Lhat_I = Lhat[I]
+    Uhat_I = Uhat[Icomp]
+
+    return jnp.sum(jnp.multiply(w_I, Lhat_I)) + jnp.sum(jnp.multiply(w_Icomp, Uhat_I))
+
+
+def compute_v_pos(wi, xi, Lhat, Uhat):
+    idx = jnp.arange(wi.shape[0])
+    # log.info(idx)
+
+    filtered_idx = jnp.array([j for j in idx if wi[j] != 0 and jnp.abs(Uhat[j] - Lhat[j]) > 1e-7])
+    # log.info(filtered_idx)
+
+    def key_func(j):
+        return (xi[j] - Lhat[j]) / (Uhat[j] - Lhat[j])
+
+    keys = jnp.array([key_func(j) for j in filtered_idx])
+    # log.info(keys)
+    sorted_idx = jnp.argsort(keys)  # this is nondecreasing, should be the corrct one according to paper
+    # sorted_idx = jnp.argsort(keys)[::-1]
+    filtered_idx = filtered_idx[sorted_idx]
+
+    # log.info(filtered_idx)
+
+    I = jnp.array([])
+    Icomp = set(range(wi.shape[0]))
+
+    # log.info(Icomp)
+
+    lI = compute_lI(wi, xi, Lhat, Uhat, I, jnp.array(list(Icomp)))
+    # log.info(f'original lI: {lI}')
+    if lI < 0:
+        return None, None, None, None
+
+    for h in filtered_idx:
+        Itest = jnp.append(I, h)
+        Icomp_test = copy.copy(Icomp)
+        Icomp_test.remove(int(h))
+
+        # log.info(Itest)
+        # log.info(Icomp_test)
+
+        lI_new = compute_lI(wi, xi, Lhat, Uhat, Itest.astype(jnp.integer), jnp.array(list(Icomp_test)))
+        # log.info(lI_new)
+        if lI_new < 0:
+            Iint = I.astype(jnp.integer)
+            # log.info(f'h={h}')
+            # log.info(f'lI before and after: {lI}, {lI_new}')
+            rhs = jnp.sum(jnp.multiply(wi[Iint], xi[Iint])) + lI / (Uhat[int(h)] - Lhat[int(h)]) * (xi[int(h)] - Lhat[int(h)])
+            return Iint, rhs, lI, int(h)
+
+        I = Itest
+        Icomp = Icomp_test
+        lI = lI_new
+    else:
+        return None, None, None, None
+
+
+def add_pos_conv_cuts(cfg, k, i, s_LB, s_UB, utilde_LB, utilde_UB, rel_s, rel_utilde, rel_u):
+    m_plus_n = rel_u.shape[0]
+    L_hat = jnp.zeros(2 * m_plus_n)
+    U_hat = jnp.zeros(2 * m_plus_n)
+
+    # uk = Pi(2 utilde_k - skminus1)
+    L_hat = L_hat.at[:m_plus_n].set(utilde_LB[k])
+    L_hat = L_hat.at[m_plus_n:].set(s_UB[k-1])
+
+    U_hat = U_hat.at[:m_plus_n].set(utilde_UB[k])
+    U_hat = U_hat.at[m_plus_n:].set(s_LB[k-1])
+
+    xi = jnp.hstack([rel_utilde, rel_s])
+    wi = jnp.zeros(2 * m_plus_n)
+    wi = wi.at[i].set(2)
+    wi = wi.at[m_plus_n + i].set(-1)
+
+    Iint, rhs, lI, h = compute_v_pos(wi, xi, L_hat, U_hat)
+
+    if Iint is None:
+        return None, None, None, None, None
+
+    lhs = rel_u[i]
+    if lhs > rhs + 1e-6:
+        log.info('found a violated cut')
+        log.info(f'with lI = {lI}')
+        log.info(f'and I = {Iint}')
+        log.info(f'h={h}')
+        # exit(0)
+
+    if lhs > rhs + 1e-6:
+        return Iint, lI, h, L_hat, U_hat
+    else:
+        return None, None, None, None, None
+
+
+def create_new_pos_constr(cfg, k, i, Iint, lI, h, s, utilde, u, Lhat, Uhat):
+
+    m_plus_n = Lhat.shape[0]
+    utilde_s_stack = gp.hstack([utilde[k], s[k-1]])
+    wi = jnp.zeros(2 * m_plus_n)
+    wi = wi.at[i].set(2)
+    wi = wi.at[m_plus_n + i].set(-1)
+
+    new_constr = 0
+    for idx in Iint:
+        new_constr += wi[idx] * (utilde_s_stack[idx] - Lhat[idx])
+    new_constr += lI / (Uhat[h] - Lhat[h]) * (utilde_s_stack[h] - Lhat[h])
+
+    return u[k][i] <= new_constr
 
 
 def BuildRelaxedModel(cfg, K, A, b, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, zprev_lower, zprev_upper, mu_l, mu_u):
@@ -381,6 +501,39 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
 
             obj_constraints.append(model.addConstr(gp.quicksum(gamma) == 1))
             model.setObjective(1 / obj_scaling * q, gp.GRB.MAXIMIZE)
+
+        model.update()
+        if cfg.exact_conv_relax.use_in_l1_rel:
+            rel_model = model.relax()
+            rel_model.optimize()
+
+            rel_s = np.array([])
+            rel_utilde = np.array([])
+            rel_u = np.array([])
+
+            # uk = Pi(2 utilde_k - skminus1)
+            for var in s[k-1]:
+                rel_s = np.append(rel_s, rel_model.getVarByName(var.VarName.item()).X)
+
+            for var in utilde[k]:
+                rel_utilde = np.append(rel_utilde, rel_model.getVarByName(var.VarName.item()).X)
+
+            for var in u[k]:
+                rel_u = np.append(rel_u, rel_model.getVarByName(var.VarName.item()).X)
+
+            log.info(rel_s)
+            log.info(rel_utilde)
+            log.info(rel_u)
+
+            for i in range(n + num_factors + 1, n + m):
+                log.info('--computing conv cuts--')
+                if (k, i) in w:
+                    log.info((k, i))
+                    Iint, lI, h, L_hat, U_hat = add_pos_conv_cuts(cfg, k, i, s_LB, s_UB, utilde_LB, utilde_UB, rel_s, rel_utilde, rel_u)
+
+                    if Iint is not None:
+                        log.info(f'new lI constraint added with {(k, i)}')
+                        model.addConstr(create_new_pos_constr(cfg, k, i, Iint, lI, h, s, utilde, u, L_hat, U_hat))
 
         model.update()
         model.optimize()
