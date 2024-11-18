@@ -33,7 +33,7 @@ x:
   u: 10.25
 
 K_min: 1
-K_max: 30
+K_max: 50
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
@@ -44,7 +44,7 @@ build_from_scratch: False
 theory_bounds: False
 postprocessing: False
 opt_based_tightening: False
-num_obbt_iter: 3
+num_obbt_iter: 5
 
 mipgap: 0.05
 mipfocus: 3

@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=LP
+#SBATCH --job-name=Portfolio
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=28
+#SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=3G
-#SBATCH --time=02-12:59:59
-#SBATCH --array=0-3
-#SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/LP/runs/%A.txt
+#SBATCH --time=02-03:59:59
+#SBATCH --array=0
+#SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/Portfolio/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=vranjan@princeton.edu
 # #SBATCH --gres=gpu:1
@@ -22,4 +22,4 @@ module load anaconda3/2024.6
 # module load anaconda3/2023.9 cudnn/cuda-11.x/8.2.0 cudatoolkit/11.3 nvhpc/21.5
 conda activate algover
 
-python run_experiment.py LP cluster
+python run_experiment.py Portfolio cluster
