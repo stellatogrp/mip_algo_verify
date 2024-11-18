@@ -128,7 +128,11 @@ def samples(cfg, lhs_mat, s0, alpha_l, alpha_u, mu_l, mu_u, lambd_l, lambd_u, zp
             z_prev = sample_simplex(zprev_lower.shape[0], key)
         else:
             z_prev = jax.random.uniform(key, shape=zprev_lower.shape, minval=zprev_lower, maxval=zprev_upper)
-        b = jnp.hstack([jnp.zeros(cfg.d), 1, z_prev, -z_prev, jnp.zeros(cfg.n)])
+
+        if cfg.zprev.incl_upper_bound:
+            b = jnp.hstack([jnp.zeros(cfg.d), 1, z_prev, -z_prev, jnp.zeros(cfg.n), cfg.zprev.incl_upper_bound * jnp.ones(cfg.n)])
+        else:
+            b = jnp.hstack([jnp.zeros(cfg.d), 1, z_prev, -z_prev, jnp.zeros(cfg.n)])
         return jnp.hstack([q, b])
 
     s_samples = jax.vmap(s_sample)(sample_idx)
@@ -178,7 +182,11 @@ def compute_sample_init_rad(cfg, P, A, s0, alpha_l, alpha_u, mu_l, mu_u, lambd_l
             z_prev = sample_simplex(zprev_lower.shape[0], key)
         else:
             z_prev = jax.random.uniform(key, shape=zprev_lower.shape, minval=zprev_lower, maxval=zprev_upper)
-        b = jnp.hstack([jnp.zeros(cfg.d), 1, z_prev, -z_prev, jnp.zeros(cfg.n)])
+
+        if cfg.zprev.incl_upper_bound:
+            b = jnp.hstack([jnp.zeros(cfg.d), 1, z_prev, -z_prev, jnp.zeros(cfg.n), cfg.zprev.incl_upper_bound * jnp.ones(cfg.n)])
+        else:
+            b = jnp.hstack([jnp.zeros(cfg.d), 1, z_prev, -z_prev, jnp.zeros(cfg.n)])
         return jnp.hstack([q, b])
 
     # s_samples = jax.vmap(s_sample)(sample_idx)
@@ -294,7 +302,10 @@ def BuildRelaxedModel(cfg, K, A, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB
     model.addConstr(gp.quicksum(z_prev) == 1)
 
     q = gp.hstack([-alpha_mu, np.zeros(num_factors), alpha_lambd * np.ones(num_stocks)])
-    b = gp.hstack([np.zeros(num_factors), one_var, z_prev, -z_prev, np.zeros(num_stocks)])
+    if cfg.zprev.incl_upper_bound:
+        b = gp.hstack([np.zeros(num_factors), one_var, z_prev, -z_prev, np.zeros(num_stocks), cfg.zprev.u * np.ones(num_stocks)])
+    else:
+        b = gp.hstack([np.zeros(num_factors), one_var, z_prev, -z_prev, np.zeros(num_stocks)])
     c = gp.hstack([q, b])
 
     utilde = model.addMVar((K+1, m+n), lb=utilde_LB[:K+1], ub=utilde_UB[:K+1])
@@ -427,13 +438,19 @@ def portfolio_verifier(cfg, D, A, s0):
 
         s[0] = model.addMVar(m + n, lb=s0, ub=s0)  # if non singleton, change here
         q = gp.hstack([-alpha_mu, np.zeros(num_factors), alpha_lambd * np.ones(num_stocks)])
-        b = gp.hstack([np.zeros(num_factors), one_var, z_prev, -z_prev, np.zeros(num_stocks)])
+        # b = gp.hstack([np.zeros(num_factors), one_var, z_prev, -z_prev, np.zeros(num_stocks)])
 
         q_l = np.hstack([-alpha_mu_u, np.zeros(num_factors), alpha_lambd_l * np.ones(num_stocks)])
         q_u = np.hstack([-alpha_mu_l, np.zeros(num_factors), alpha_lambd_u * np.ones(num_stocks)])
 
-        b_l = np.hstack([np.zeros(num_factors), 1, zprev_lower, -zprev_upper, np.zeros(num_stocks)])
-        b_u = np.hstack([np.zeros(num_factors), 1, zprev_upper, -zprev_lower, np.zeros(num_stocks)])
+        if cfg.zprev.incl_upper_bound:
+            b = gp.hstack([np.zeros(num_factors), one_var, z_prev, -z_prev, np.zeros(num_stocks), cfg.zprev.u * np.ones(num_stocks)])
+            b_l = np.hstack([np.zeros(num_factors), 1, zprev_lower, -zprev_upper, np.zeros(num_stocks), cfg.zprev.u * np.ones(num_stocks)])
+            b_u = np.hstack([np.zeros(num_factors), 1, zprev_upper, -zprev_lower, np.zeros(num_stocks), cfg.zprev.u * np.ones(num_stocks)])
+        else:
+            b = gp.hstack([np.zeros(num_factors), one_var, z_prev, -z_prev, np.zeros(num_stocks)])
+            b_l = np.hstack([np.zeros(num_factors), 1, zprev_lower, -zprev_upper, np.zeros(num_stocks)])
+            b_u = np.hstack([np.zeros(num_factors), 1, zprev_upper, -zprev_lower, np.zeros(num_stocks)])
 
         c = gp.hstack([q, b])
         c_l = np.hstack([q_l, b_l])
@@ -583,7 +600,7 @@ def portfolio_verifier(cfg, D, A, s0):
     log.info(A.shape)
     log.info(c.shape)
     log.info(M.shape)
-    log.info(c_l)
+    log.info(c_l.shape)
     log.info(c_u)
 
     max_sample_resids = samples(cfg, lhs_mat, s0, alpha_l, alpha_u, mu_l, mu_u, lambd_l, lambd_u, zprev_lower, zprev_upper)
@@ -731,7 +748,10 @@ def portfolio_verifier(cfg, D, A, s0):
 def avg_sol(cfg, D, A, b, mu_sample):
     n, d = cfg.n, cfg.d
     z = cp.Variable(2 * n + d)
-    s = cp.Variable(3 * n + d + 1)
+    if cfg.zprev.incl_upper_bound:
+        s = cp.Variable(4 * n + d + 1)
+    else:
+        s = cp.Variable(3 * n + d + 1)
     gamma, lambd = cfg.gamma, cfg.lambd
     alpha = 1 / gamma
 
@@ -779,22 +799,36 @@ def portfolio_l1(cfg):
     D = jnp.diag(Ddiag)
     log.info(D)
 
-    A = jnp.block([
-        [F.T, -jnp.eye(d), jnp.zeros((d, n))],
-        [jnp.ones((1, n)), jnp.zeros((1, d)), jnp.zeros((1, n))],
-        [jnp.eye(n), jnp.zeros((n, d)), -jnp.eye(n)],
-        [-jnp.eye(n), jnp.zeros((n, d)), -jnp.eye(n)],
-        [-jnp.eye(n), jnp.zeros((n, d)), jnp.zeros((n, n))]
-    ])
+    if cfg.zprev.incl_upper_bound:
+        A = jnp.block([
+            [F.T, -jnp.eye(d), jnp.zeros((d, n))],
+            [jnp.ones((1, n)), jnp.zeros((1, d)), jnp.zeros((1, n))],
+            [jnp.eye(n), jnp.zeros((n, d)), -jnp.eye(n)],
+            [-jnp.eye(n), jnp.zeros((n, d)), -jnp.eye(n)],
+            [-jnp.eye(n), jnp.zeros((n, d)), jnp.zeros((n, n))],
+            [jnp.eye(n), jnp.zeros((n, d)), jnp.zeros((n, n))]
+        ])
+    else:
+        A = jnp.block([
+            [F.T, -jnp.eye(d), jnp.zeros((d, n))],
+            [jnp.ones((1, n)), jnp.zeros((1, d)), jnp.zeros((1, n))],
+            [jnp.eye(n), jnp.zeros((n, d)), -jnp.eye(n)],
+            [-jnp.eye(n), jnp.zeros((n, d)), -jnp.eye(n)],
+            [-jnp.eye(n), jnp.zeros((n, d)), jnp.zeros((n, n))]
+        ])
 
-    log.info(A.shape)
-    log.info(3 * n + d + 1)
+    # log.info(A.shape)
+    # log.info(3 * n + d + 1)
 
     mu_l = cfg.mu.l * jnp.ones(n)
     mu_u = cfg.mu.u * jnp.ones(n)
 
     z_prev = 1 / n
-    b_avg = jnp.hstack([jnp.zeros(d), 1, z_prev * jnp.ones(n), -z_prev * jnp.ones(n), jnp.zeros(n)])
+
+    if cfg.zprev.incl_upper_bound:
+        b_avg = jnp.hstack([jnp.zeros(d), 1, z_prev * jnp.ones(n), -z_prev * jnp.ones(n), jnp.zeros(n), cfg.zprev.u * jnp.ones(n)])
+    else:
+        b_avg = jnp.hstack([jnp.zeros(d), 1, z_prev * jnp.ones(n), -z_prev * jnp.ones(n), jnp.zeros(n)])
 
     if cfg.z0.type == 'avg_sol':
         key, subkey = jax.random.split(key)

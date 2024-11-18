@@ -131,7 +131,8 @@ def test_portfolio():
     sk = np.hstack([z_full, y_full])
 
     def proj(v):
-        l = Am + An - n
+        # l = Am + An - n
+        l = An + d + 1
         u = Am + An
         v[l:u] = np.maximum(v[l:u], 0)
         return v
@@ -179,9 +180,10 @@ def test_portfolio_l1():
     x_prev = 1/n * np.ones(n)
 
     # original
+    C = 1.5 / n
     x = cp.Variable(n)
     obj = mu.T @ x - gamma * cp.quad_form(x, Sigma) - lambd * cp.norm(x - x_prev, 1)
-    constraints = [cp.sum(x) == 1, x >= 0]
+    constraints = [cp.sum(x) == 1, x >= 0, x <= C]
     prob = cp.Problem(cp.Maximize(obj), constraints)
     prob.solve()
     x_orig = x.value
@@ -196,16 +198,18 @@ def test_portfolio_l1():
         [np.ones((1, n)), np.zeros((1, d)), np.zeros((1, n))],
         [np.eye(n), np.zeros((n, d)), -np.eye(n)],
         [-np.eye(n), np.zeros((n, d)), -np.eye(n)],
-        [-np.eye(n), np.zeros((n, d)), np.zeros((n, n))]
+        [-np.eye(n), np.zeros((n, d)), np.zeros((n, n))],
+        [np.eye(n), np.zeros((n, d)), np.zeros((n, n))],
     ])
 
     print(A.shape)
-    print(3 * n + d + 1)
+    print(4 * n + d + 1)
     print(2 * n + d)
 
-    b = np.hstack([np.zeros(d), 1, x_prev, -x_prev, np.zeros(n)])
+    b = np.hstack([np.zeros(d), 1, x_prev, -x_prev, np.zeros(n), C * np.ones(n)])
 
-    s = cp.Variable(3 * n + d + 1)
+    # s = cp.Variable(3 * n + d + 1)
+    s = cp.Variable(4 * n + d + 1)
 
     q = np.hstack([-alpha * mu, np.zeros(d), alpha * lambd * np.ones(n)])
     print(q.shape)
@@ -250,7 +254,8 @@ def test_portfolio_l1():
     # sk = np.hstack([z.value, y_full])
 
     def proj(v):
-        l = Am + An - (3 * n)
+        # l = Am + An - (3 * n)
+        l = An + d + 1
         u = Am + An
         v[l:u] = np.maximum(v[l:u], 0)
         return v
@@ -268,3 +273,19 @@ def test_portfolio_l1():
         sk = sk + u - utilde
 
     print(sk)
+    assert np.linalg.norm(sk[:n] - x_orig) <= 1e-5
+
+
+def test_sampling():
+    n = 10
+    C = 2 / n
+
+    N = 10000
+    samples = np.random.dirichlet(np.ones(n), size=N)
+    print(samples)
+    filtered_samples = samples[np.all(samples <= C, axis=1)]
+    # mask = samples[]
+    print(filtered_samples.shape)
+    # print(filtered_samples)
+
+    assert np.all(filtered_samples <= C)

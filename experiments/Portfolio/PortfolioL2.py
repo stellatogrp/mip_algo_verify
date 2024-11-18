@@ -36,7 +36,10 @@ def interval_bound_prop(A, l, u):
 def proj_C(cfg, v):
     n = cfg.n
     m_plus_n = v.shape[0]
-    return v.at[m_plus_n - n:].set(jax.nn.relu(v[m_plus_n - n:]))
+    if cfg.zprev.incl_upper_bound:
+        return v.at[m_plus_n - 2 * n:].set(jax.nn.relu(v[m_plus_n - 2 * n:]))
+    else:
+        return v.at[m_plus_n - n:].set(jax.nn.relu(v[m_plus_n - n:]))
 
 
 def BoundPreprocessing(cfg, k, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, c_l, c_u):
@@ -559,7 +562,10 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
 def avg_sol(cfg, D, A, b, mu):
     n, d = cfg.n, cfg.d
     z = cp.Variable(n + d)
-    s = cp.Variable(n + d + 1)
+    if cfg.zprev.incl_upper_bound:
+        s = cp.Variable(2 * n + d + 1)
+    else:
+        s = cp.Variable(n + d + 1)
     gamma, lambd = cfg.gamma, cfg.lambd
 
     P = 2 * jnp.block([
@@ -699,13 +705,21 @@ def portfolio_l2(cfg):
     D = jnp.diag(Ddiag)
     log.info(D)
 
-    A = np.block([
-        [F.T, -jnp.eye(d)],
-        [jnp.ones((1, n)), jnp.zeros((1, d))],
-        [-jnp.eye(n), jnp.zeros((n, d))]
-    ])
-
-    b = jnp.hstack([jnp.zeros(d), 1, jnp.zeros(n)])
+    if cfg.zprev.incl_upper_bound:
+        A = np.block([
+            [F.T, -jnp.eye(d)],
+            [jnp.ones((1, n)), jnp.zeros((1, d))],
+            [-jnp.eye(n), jnp.zeros((n, d))],
+            [jnp.eye(n), jnp.zeros((n, d))]
+        ])
+        b = jnp.hstack([jnp.zeros(d), 1, jnp.zeros(n), cfg.zprev.u * jnp.ones(n)])
+    else:
+        A = np.block([
+            [F.T, -jnp.eye(d)],
+            [jnp.ones((1, n)), jnp.zeros((1, d))],
+            [-jnp.eye(n), jnp.zeros((n, d))]
+        ])
+        b = jnp.hstack([jnp.zeros(d), 1, jnp.zeros(n)])
 
     log.info(A.shape)
     log.info(b.shape)

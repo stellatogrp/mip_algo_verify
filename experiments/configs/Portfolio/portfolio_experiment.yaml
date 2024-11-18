@@ -1,4 +1,4 @@
-reg_type: l2  # 'l2' or 'l1'
+reg_type: l1  # 'l2' or 'l1'
 
 n: 10
 d: 3
@@ -23,10 +23,11 @@ mu:
 
 zprev:  # remember this needs to include values summable to exactly 1 based on n
   l: 0
-  u: 1
+  u: 0.2
+  incl_upper_bound: False  # set true when u < 1
 
 K_min: 1
-K_max: 10
+K_max: 4
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
