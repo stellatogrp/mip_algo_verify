@@ -261,7 +261,7 @@ def momentum_pep(K, R, L, t, alpha=1, theta=1):
         if i == 1:
             w[i + 1] = w[i] + theta * (y[i + 1] - x[i])
         else:
-            w[i + 1] = (1 + beta_k) * w[i] - beta_k * w[i-1] + + theta * (y[i + 1] - x[i])
+            w[i + 1] = (1 + beta_k) * w[i] - beta_k * w[i-1] + beta_k * (y[i + 1] - x[i])
 
     problem.set_initial_condition((x[0] - xs) ** 2 + (w[0] - ys) ** 2 <= R ** 2)
 

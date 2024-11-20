@@ -612,7 +612,9 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
 
     #
     R = compute_init_rad(cfg, P, A, b, s0, zprev_lower, zprev_upper, mu_l, mu_u, lambd)
+    log.info(f'init rad: {R}')
     obj_scaling = cfg.obj_scaling.default
+    # exit(0)
     for k in range(1, K_max+1):
         log.info(f'---k={k}---')
         utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB = BoundPreprocessing(cfg, k, lhs_mat, utilde_LB, utilde_UB, v_LB, v_UB, u_LB, u_UB, s_LB, s_UB, c_l, c_u)

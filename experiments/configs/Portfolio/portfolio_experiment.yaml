@@ -23,8 +23,8 @@ mu:
 
 zprev:  # remember this needs to include values summable to exactly 1 based on n
   l: 0
-  u: 1.
-  incl_upper_bound: False # set true when u < 1
+  u: 1.2
+  incl_upper_bound: True # set true when u < 1
 
 K_min: 1
 K_max: 30
@@ -57,3 +57,7 @@ samples:
   init_dist_N: 100
   out_fname: sample_resids.csv
   max_out_fname: max_sample_resids.csv
+
+pep:
+  resid_fname: pep_resids.csv
+  time_fname: pep_times.csv

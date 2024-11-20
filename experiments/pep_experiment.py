@@ -7,6 +7,7 @@ import ISTA.FISTA_pep as FISTA_pep
 import ISTA.ISTA_pep as ISTA_pep
 import LP.LP_pep as LP_pep
 import NNQP.NNQP_pep as NNQP_pep
+import Portfolio.Portfolio_pep as Portfolio_pep
 
 log = logging.getLogger(__name__)
 
@@ -29,12 +30,17 @@ def main_experiment_ista(cfg):
 def main_experiment_fista(cfg):
     FISTA_pep.run(cfg)
 
+@hydra.main(version_base='1.2', config_path='configs/Portfolio', config_name='portfolio_experiment.yaml')
+def main_experiment_portfolio(cfg):
+    Portfolio_pep.run(cfg)
+
 
 base_dir_map = {
     'NNQP': 'NNQP/pep_outputs',
     'LP': 'LP/pep_outputs',
     'ISTA': 'ISTA/pep_outputs',
     'FISTA': 'FISTA/pep_outputs',
+    'Portfolio': 'Portfolio/pep_outputs',
 }
 
 
@@ -43,6 +49,7 @@ func_driver_map = {
     'LP': main_experiment_lp,
     'ISTA': main_experiment_ista,
     'FISTA': main_experiment_fista,
+    'Portfolio': main_experiment_portfolio,
 }
 
 
