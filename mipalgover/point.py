@@ -1,6 +1,7 @@
-import numpy as np
+import scipy.sparse as spa
 
 from mipalgover.dict_utils import merge_dict, prune_dict
+from mipalgover.mat_utils import is_valid_mat
 
 """
 Most of the code structure is borrowed from PEPit https://github.com/PerformanceEstimation/PEPit
@@ -9,7 +10,8 @@ Most of the code structure is borrowed from PEPit https://github.com/Performance
 
 class Point(object):
     counter = 0
-    list_of_leaf_points = list() # TODO: figure out if we need these
+    list_of_leaf_points = list()  # TODO: figure out if we need these
+    __array_priority__ = 1000  # this is necessary else numpy will not even look at the @ operator due to precedence
 
     def __init__(self,
                  n,
@@ -20,7 +22,7 @@ class Point(object):
         self.n = n
         if is_leaf:
             assert decomposition_dict is None
-            self.decomposition_dict = {self: np.eye(n)}
+            self.decomposition_dict = {self: spa.eye(n)}
             self.counter = Point.counter
             Point.counter += 1
             Point.list_of_leaf_points.append(self)
@@ -37,3 +39,41 @@ class Point(object):
         merged_decomposition_dict = prune_dict(merged_decomposition_dict)
 
         return Point(self.n, is_leaf=False, decomposition_dict=merged_decomposition_dict)
+
+    def __rmul__(self, other):
+        if isinstance(other, int) or isinstance(other, float):
+            new_decomposition_dict = dict()
+            for key, value in self.decomposition_dict.items():
+                new_decomposition_dict[key] = other * value
+            return Point(self.n, is_leaf=False, decomposition_dict=new_decomposition_dict)
+        else:
+            raise TypeError(f'Points can only be multiplied by scalar values.'
+                            f'Got {type(other)}. If intending to use a matrix, use the @ symbol with the matrix on the left')
+
+    def __mul__(self, other):
+        return self.__rmul__(other=other)
+
+    def __truediv__(self, other):
+        return self.__rmul__(1 / other)
+
+    def __neg__(self):
+        return self.__rmul__(other=-1)
+
+    def __sub__(self, other):
+        return self.__add__(-other)
+
+    def __matmul__(self, other):
+        # return self.__rmatmul__(other=other)
+        raise NotImplementedError('np matrix or sp matrix should be on the left of the @')
+
+    def __rmatmul__(self, other):
+        # print('__rmatmul__ being called')
+        if is_valid_mat(other):
+            new_decomposition_dict = dict()
+            for key, value in self.decomposition_dict.items():
+                new_decomposition_dict[key] = other @ value
+            return Point(other.shape[0], is_leaf=False, decomposition_dict=new_decomposition_dict)
+        raise NotImplementedError(f'Object on the left should be np or sp.sparse matrix. Got {type(other)}')
+
+    def eval(self):
+        raise NotImplementedError('Point.eval() needs to be implemented.')

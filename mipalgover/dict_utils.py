@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.sparse as spa
 
 
 def merge_dict(dict1, dict2):
@@ -15,6 +16,11 @@ def merge_dict(dict1, dict2):
 def prune_dict(my_dict):
     pruned_dict = dict()
     for key in my_dict.keys():
-        if not np.allclose(my_dict[key], 0, atol=1e-9):
-            pruned_dict[key] = my_dict[key]
+        val = my_dict[key]
+        if isinstance(val, np.ndarray):
+            if not np.allclose(val, 0, atol=1e-9):
+                pruned_dict[key] = val
+        elif spa.issparse(val):
+            if val.count_nonzero():  # condition passes as long as at least 1 nonzero element
+                pruned_dict[key] = val
     return pruned_dict
