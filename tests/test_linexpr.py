@@ -5,6 +5,7 @@ from mipalgover.linexpr import LinExpr, Vector
 
 def test_LinExpr_dense():
     np.random.seed(0)
+    m = 15
     n = 10
     x = LinExpr(n)
     assert np.linalg.norm(x.decomposition_dict[x] - np.eye(n)) <= 1e-10
@@ -33,6 +34,12 @@ def test_LinExpr_dense():
 
     null = x - x
     assert x not in null.decomposition_dict
+
+    B = np.random.normal(size=(m, n))
+    y = B @ x
+
+    assert y.n == m
+    assert not y.is_leaf
 
 
 def test_LinExpr_sparse():

@@ -40,6 +40,11 @@ class LinExpr(object):
         merged_decomposition_dict = merge_dict(self.decomposition_dict, other.decomposition_dict)
         merged_decomposition_dict = prune_dict(merged_decomposition_dict)
 
+        # out_dim = merged_decomposition_dict[self].shape[0]
+        # for key, value in merged_decomposition_dict.items():
+        #     test_out_dim = value.shape[0]
+        #     assert out_dim == test_out_dim
+
         return LinExpr(self.n, is_leaf=False, decomposition_dict=merged_decomposition_dict)
 
     def __rmul__(self, other):
@@ -84,4 +89,4 @@ class LinExpr(object):
 class Vector(LinExpr):
 
     def __init__(self, n):
-        return super().__init__(n)
+        super().__init__(n)
