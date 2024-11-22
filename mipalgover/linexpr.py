@@ -82,11 +82,16 @@ class LinExpr(object):
             return LinExpr(other.shape[0], is_leaf=False, decomposition_dict=new_decomposition_dict)
         raise NotImplementedError(f'Object on the left should be np or sp.sparse matrix. Got {type(other)}')
 
+    def get_output_dim(self):
+        out_dim = None
+        for _, value in self.decomposition_dict.items():
+            curr_dim = value.shape[0]
+            if out_dim is None:
+                out_dim = curr_dim
+            else:
+                assert out_dim == curr_dim
+
+        return out_dim
+
     def eval(self):
         raise NotImplementedError('LinExpr.eval() needs to be implemented.')
-
-
-class Vector(LinExpr):
-
-    def __init__(self, n):
-        super().__init__(n)

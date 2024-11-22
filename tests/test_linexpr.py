@@ -1,7 +1,8 @@
 import numpy as np
 import scipy.sparse as spa
 
-from mipalgover.linexpr import LinExpr, Vector
+from mipalgover.linexpr import LinExpr
+from mipalgover.vector import Vector
 
 
 def test_LinExpr_dense():

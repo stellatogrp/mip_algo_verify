@@ -1,8 +1,8 @@
 import cvxpy as cp
 import numpy as np
-import scipy.sparse as spa
 
-from mipalgover.linexpr import Vector
+# from mipalgover.vector import Vector
+from mipalgover.verifier import Verifier
 
 
 def test_verifier():
@@ -43,15 +43,22 @@ def test_verifier():
 
     print(f'x from DR: {xk}')
 
-    x = Vector(n)
-    y = Vector(m)
+    VP = Verifier()
 
-    c_param = Vector(n)
-    # b_param = Vector(n)
+    # c_param = Verifier.add_param(n, lb=c, ub=c)
+    c_param = VP.add_param(n, lb=c, ub=c)
+    # b_param = VP.add_param(m, lb=b, ub=b)  # add boxes here when testing
 
-    test_expr = x - t * (c_param - A.T @ y)
-    # print(test_expr.decomposition_dict)
+    x0 = VP.add_initial_iterate(n, lb=0, ub=0)
+    y0 = VP.add_initial_iterate(m, lb=0, ub=0)
 
-    assert spa.linalg.norm(test_expr.decomposition_dict[x] - spa.eye(n)) <= 1e-10
-    assert np.linalg.norm(test_expr.decomposition_dict[y] - t * A.T) <= 1e-10
-    assert spa.linalg.norm(test_expr.decomposition_dict[c_param] + t * spa.eye(n)) <= 1e-10
+    K = 1
+
+    x = [None for _ in range(K+1)]
+    y = [None for _ in range(K+1)]
+
+    x[0] = x0
+    y[0] = y0
+    for k in range(1, K+1):
+        # xk = relu(xkminus1 - t * (c_param - A.T @ yminus1))
+        x[k] = VP.add_explicit_linear_step(x[k-1] - t * (c_param - A.T @ y[k-1]))
