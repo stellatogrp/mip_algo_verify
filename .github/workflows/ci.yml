@@ -34,13 +34,13 @@ jobs:
         # Install a specific uv version using the installer
         run: curl -LsSf https://astral.sh/uv/0.4.1/install.sh | sh
 
-      # TODO (bart): we need to set up the correct WLS license for this
-      # - name: Install Gurobi License
-      #   shell: bash
-      #   env:
-      #     WLSLICENSE: ${{ secrets.WLSLICENSE }}
-      #   run: |
-      #     echo "$WLSLICENSE" > $HOME/gurobi.lic
+      - shell: bash
+        id: write-license
+        env:
+          LICENSE: ${{ secrets.GUROBI_LICENSE   }}
+        run: |
+          echo "$LICENSE" > $PWD/gurobi.lic
+          echo "grb_license_file=$PWD/gurobi.lic" >> $GITHUB_OUTPUT
 
       - name: Install the project
         run: uv sync --all-extras --dev
