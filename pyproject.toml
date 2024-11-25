@@ -18,6 +18,7 @@ dependencies = ["cvxpy", "jax"]
 
 [project.optional-dependencies]
 dev = [
+       "gurobipy",
        "pytest",
        "pre-commit",
        "ruff",
