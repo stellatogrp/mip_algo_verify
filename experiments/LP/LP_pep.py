@@ -257,7 +257,7 @@ def momentum_pep(K, R, L, t, alpha=1, theta=1):
     for i in range(K):
         x[i], _, _ = proximal_step(w[i], func2, alpha)
         y[i + 1], _, _ = proximal_step(2 * x[i] - w[i], func1, alpha)
-        beta_k = K/(K+3)
+        beta_k = i/(i+3)
         if i == 1:
             w[i + 1] = w[i] + theta * (y[i + 1] - x[i])
         else:

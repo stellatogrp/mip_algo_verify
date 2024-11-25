@@ -27,7 +27,7 @@ zprev:  # remember this needs to include values summable to exactly 1 based on n
   incl_upper_bound: True # set true when u < 1
 
 K_min: 1
-K_max: 30
+K_max: 15
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)

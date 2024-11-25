@@ -10,6 +10,9 @@ def merge_dict(dict1, dict2):
             merged_dict[key] += dict2[key]
         else:
             merged_dict[key] = dict2[key]
+
+        if isinstance(merged_dict[key], np.matrix):
+            merged_dict[key] = np.asarray(merged_dict[key])
     return merged_dict
 
 

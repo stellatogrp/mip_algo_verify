@@ -47,7 +47,7 @@ def test_verifier():
 
     # c_param = Verifier.add_param(n, lb=c, ub=c)
     c_param = VP.add_param(n, lb=c, ub=c)
-    # b_param = VP.add_param(m, lb=b, ub=b)  # add boxes here when testing
+    b_param = VP.add_param(m, lb=b-.1, ub=b+.1)  # add boxes here when testing
 
     x0 = VP.add_initial_iterate(n, lb=0, ub=0)
     y0 = VP.add_initial_iterate(m, lb=0, ub=0)
@@ -60,5 +60,18 @@ def test_verifier():
     x[0] = x0
     y[0] = y0
     for k in range(1, K+1):
-        # xk = relu(xkminus1 - t * (c_param - A.T @ yminus1))
-        x[k] = VP.add_explicit_linear_step(x[k-1] - t * (c_param - A.T @ y[k-1]))
+        print(k)
+
+        # x[k] = VP.add_relu_step(x[k-1] - t * (c_param - A.T @ y[k-1]))  # TODO: replace with relu once implemented
+        # y[k] = VP.add_explicit_affine_step(y[k-1] - t * (A @ (2 * x[k] - x[k-1]) - b_param))
+
+        x[k] = VP.relu_step(x[k-1] - t * (c_param - A.T @ y[k-1]))
+        y[k] = y[k-1] - t * (A @ (2 * x[k] - x[k-1]) - b_param)
+
+        # VP.set_zero_objective()
+        VP.set_infinity_norm_objective(y[k] - y[k-1])
+        VP.solve()
+
+    # print(x[1].decomposition_dict)
+    # print(y[1].decomposition_dict)
+    # VP.addobjective(intfy_norm(s[k] - s[k-1]))

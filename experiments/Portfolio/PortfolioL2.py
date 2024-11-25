@@ -472,9 +472,11 @@ def portfolio_verifier(cfg, D, A, b, s0, mu_l, mu_u):
         if pnorm == 1 or pnorm == 'inf':
             obj_constraints.append(model.addConstr(up - un == s[k] - s[k-1]))
 
-            for i in range(m + n):
-                obj_constraints.append(up[i] <= np.abs(s_UB[k, i] - s_LB[k-1, i]) * vobj[i])
-                obj_constraints.append(un[i] <= np.abs(s_LB[k, i] - s_UB[k-1, i]) * (1 - vobj[i]))
+            # for i in range(m + n):
+            #     # obj_constraints.append(up[i] <= np.abs(s_UB[k, i] - s_LB[k-1, i]) * vobj[i])
+            #     # obj_constraints.append(un[i] <= np.abs(s_LB[k, i] - s_UB[k-1, i]) * (1 - vobj[i]))
+            #     obj_constraints.append(model.addConstr(up[i] <= np.abs(s_UB[k, i] - s_LB[k-1, i]) * vobj[i]))
+            #     obj_constraints.append(model.addConstr(un[i] <= np.abs(s_LB[k, i] - s_UB[k-1, i]) * (1 - vobj[i])))
 
             for i in range(m + n):
                 if L[i] >= 0:
