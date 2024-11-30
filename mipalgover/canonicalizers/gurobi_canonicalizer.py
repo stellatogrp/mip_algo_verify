@@ -75,39 +75,43 @@ class GurobiCanonicalizer(object):
 
     def set_zero_objective(self):
         # this function is mostly just for debugging the constraints
-        self.model.setObjective(0)
-        self.model.update()
 
-    def set_infinity_norm_objective(self, expr, lb, ub):
-        n = expr.get_output_dim()
         self.model_to_opt = self.model.copy()
-        rhs_gp_expr = self.lin_expr_to_gp_expr(expr)
-        # print(rhs_gp_expr)
+        self.model_to_opt.setObjective(0)
+        self.model_to_opt.update()
 
-        vobj = self.model_to_opt.addMVar(expr.get_output_dim(), vtype=gp.GRB.BINARY)
-        up = self.model_to_opt.addMVar(expr.get_output_dim(), ub=np.abs(ub))
-        un = self.model_to_opt.addMVar(expr.get_output_dim(), ub=np.abs(lb))
+    def set_infinity_norm_objective(self, expr_list, lb_list, ub_list):
+        self.model_to_opt = self.model.copy()
 
-        self.model_to_opt.addConstr(up - un == rhs_gp_expr)
+        all_lb = np.hstack(lb_list)
+        all_ub = np.hstack(ub_list)
 
-        for i in range(n):
-            if lb[i] >= 0:
-                # self.model_to_opt.addConstr(up[i] == rhs_gp_expr[i])
-                self.model_to_opt.addConstr(un[i] == 0)
-            elif ub[i] < 0:
-                # self.model_to_opt.addConstr(un[i] == -rhs_gp_expr[i])
-                self.model_to_opt.addConstr(up[i] == 0)
-            else:
-                self.model_to_opt.addConstr(up[i] <= np.abs(ub) * vobj[i])
-                self.model_to_opt.addConstr(un[i] <= np.abs(lb) * (1-vobj[i]))
-
-        M = np.maximum(np.max(np.abs(ub)), np.max(np.abs(lb)))
+        M = np.maximum(np.max(np.abs(all_ub)), np.max(np.abs(all_lb)))
         q = self.model_to_opt.addVar(ub=M)
-        gamma = self.model_to_opt.addMVar(n, vtype=gp.GRB.BINARY)
 
-        for i in range(n):
-            self.model_to_opt.addConstr(q >= up[i] + un[i])
-            self.model_to_opt.addConstr(q <= up[i] + un[i] + M * (1 - gamma[i]))
+        for expr, lb, ub in zip(expr_list, lb_list, ub_list):
+            n = expr.get_output_dim()
+            rhs_gp_expr = self.lin_expr_to_gp_expr(expr)
+
+            up = self.model_to_opt.addMVar(n, ub=np.abs(ub))
+            un = self.model_to_opt.addMVar(n, ub=np.abs(lb))
+
+            self.model_to_opt.addConstr(up - un == rhs_gp_expr)
+
+            for i in range(n):
+                if lb[i] >= 0:
+                    self.model_to_opt.addConstr(un[i] == 0)
+                elif ub[i] < 0:
+                    self.model_to_opt.addConstr(up[i] == 0)
+                else:
+                    vobji = self.model_to_opt.addMVar(1, vtype=gp.GRB.BINARY)
+                    self.model_to_opt.addConstr(up[i] <= np.abs(ub[i]) * vobji)
+                    self.model_to_opt.addConstr(un[i] <= np.abs(lb[i]) * (1-vobji))
+
+            gamma = self.model_to_opt.addMVar(n, vtype=gp.GRB.BINARY)
+            for i in range(n):
+                self.model_to_opt.addConstr(q >= up[i] + un[i])
+                self.model_to_opt.addConstr(q <= up[i] + un[i] + M * (1 - gamma[i]))
 
         self.model_to_opt.setObjective(q, gp.GRB.MAXIMIZE)
         self.model_to_opt.update()
@@ -115,3 +119,4 @@ class GurobiCanonicalizer(object):
     def solve_model(self):
         self.model_to_opt.optimize()
         # self.model.optimize()
+        return self.model_to_opt.objVal

@@ -128,12 +128,25 @@ class Verifier(object):
         # TODO: replace once we have the infty norm objectives
         self.canonicalizer.set_zero_objective()
 
-    def set_infinity_norm_objective(self, expr):
-        expr_lb, expr_ub = self.linear_bound_prop(expr)
-        self.canonicalizer.set_infinity_norm_objective(expr, expr_lb, expr_ub)
+    def set_infinity_norm_objective(self, expr_list):
+        # expr_lb, expr_ub = self.linear_bound_prop(expr)
+        # self.canonicalizer.set_infinity_norm_objective(expr, expr_lb, expr_ub)
+
+        if not isinstance(expr_list, list):
+            expr_list = [expr_list]
+
+        lb_list = []
+        ub_list = []
+        for single_expr in expr_list:
+            expr_lb, expr_ub = self.linear_bound_prop(single_expr)
+            lb_list.append(expr_lb)
+            ub_list.append(expr_ub)
+
+        self.canonicalizer.set_infinity_norm_objective(expr_list, lb_list, ub_list)
 
     def solve(self):
-        self.canonicalizer.solve_model()
+        res = self.canonicalizer.solve_model()
+        return res
 
 
 def interval_bound_prop(A, l, u):
@@ -155,7 +168,7 @@ def upcast(n, val):
     elif isinstance(val, np.ndarray):
         return val
     else:
-        raise TypeError(f'lb or ub needs to be an int, float, or np.adarray. Got {type(val)}')
+        raise TypeError(f'lb or ub needs to be an int, float, or np.ndarray. Got {type(val)}')
 
 
 def relu(v):

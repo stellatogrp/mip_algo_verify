@@ -16,6 +16,9 @@ authors = [
 ]
 dependencies = ["cvxpy", "jax"]
 
+[tool.setuptools]
+packages = ["mipalgover"]
+
 [project.optional-dependencies]
 dev = [
        "gurobipy",
