@@ -118,5 +118,20 @@ class GurobiCanonicalizer(object):
 
     def solve_model(self):
         self.model_to_opt.optimize()
-        # self.model.optimize()
         return self.model_to_opt.objVal
+
+    def extract_sol(self, iterate):
+        out = 0
+        for key, value in iterate.decomposition_dict.items():
+            gp_var = self.vector_var_map[key]
+            gp_var_val = np.zeros(gp_var.shape)
+
+            for i in range(gp_var.shape[0]):
+                # print(i)
+                # rel_model.getVarByName(var.VarName.item()).X
+                # print(self.model_to_opt.getVarByName(gp_var[i].VarName.item()).X)
+                gp_var_val[i] = self.model_to_opt.getVarByName(gp_var[i].VarName.item()).X
+
+            out += value @ gp_var_val
+
+        return out

@@ -148,6 +148,9 @@ class Verifier(object):
         res = self.canonicalizer.solve_model()
         return res
 
+    def extract_sol(self, iterate):
+        return self.canonicalizer.extract_sol(iterate)
+
 
 def interval_bound_prop(A, l, u):
     # given x in [l, u], give bounds on Ax

@@ -26,8 +26,11 @@ def test_verifier():
 
     print('testing with DR')
 
-    xk = np.zeros(n)
-    yk = np.zeros(m)
+    # xk = np.zeros(n)
+    # yk = np.zeros(m)
+
+    xk = np.ones(n)
+    yk = np.ones(m)
 
     def proj(v):
         return np.maximum(v, 0)
@@ -35,6 +38,8 @@ def test_verifier():
     t = 0.1
     K = 10000
     DR_resids = []
+    DR_x = [xk]
+    DR_y = [yk]
     for _ in range(K):
         xnew = proj(xk - t * (c - A.T @ yk))
         ynew = yk - t * (A @ (2 * xnew - xk) - b)
@@ -42,6 +47,9 @@ def test_verifier():
         z_resid = np.hstack([xnew - xk, ynew - yk])
         DR_resids.append(np.max(np.abs(z_resid)))
         # DR_resids.append(np.max(np.abs(ynew - yk)))
+
+        DR_x.append(xnew)
+        DR_y.append(ynew)
 
         xk = xnew
         yk = ynew
@@ -57,10 +65,10 @@ def test_verifier():
 
     # VP.add_constraint(ones @ c_param == 1)
 
-    x0 = VP.add_initial_iterate(n, lb=0, ub=0)
-    y0 = VP.add_initial_iterate(m, lb=0, ub=0)
+    x0 = VP.add_initial_iterate(n, lb=1, ub=1)
+    y0 = VP.add_initial_iterate(m, lb=1, ub=1)
 
-    K = 5
+    K = 10
 
     x = [None for _ in range(K+1)]
     y = [None for _ in range(K+1)]
@@ -84,9 +92,13 @@ def test_verifier():
         res = VP.solve()
         all_res.append(res)
 
-    # print(x[1].decomposition_dict)
-    # print(y[1].decomposition_dict)
-    # VP.addobjective(intfy_norm(s[k] - s[k-1]))
-
     print(f'VP resids: {all_res}')
     print(f'DR resids: {DR_resids[:K]}')
+
+    for k in range(1, K+1):
+        print(f'k={k}')
+        print(f'DR_x: {DR_x[k]}')
+        print(f'VP_x: {VP.extract_sol(x[k])}')
+        print(f'DR_y: {DR_y[k]}')
+        print(f'VP_y: {VP.extract_sol(y[k])}')
+        print(f'VP_y_calc: {VP.extract_sol(y[k-1]) - t * (A @ (2 * VP.extract_sol(x[k]) - VP.extract_sol(x[k-1])) - VP.extract_sol(b_param))}')

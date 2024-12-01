@@ -16,10 +16,12 @@ class LinExpr(object):
     def __init__(self,
                  n,
                  is_leaf=True,
-                 decomposition_dict=None):
+                 decomposition_dict=None,
+                 name=None):
         self.is_leaf = is_leaf
         self.value = None
         self.n = n
+        self.name = f'var{self.counter}'
         if is_leaf:
             assert decomposition_dict is None
             self.decomposition_dict = {self: spa.eye(n)}
@@ -32,6 +34,12 @@ class LinExpr(object):
             assert isinstance(decomposition_dict, dict)
             self.decomposition_dict = decomposition_dict
             self.counter = None
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.name
 
     def __add__(self, other):
         assert isinstance(other, LinExpr)
