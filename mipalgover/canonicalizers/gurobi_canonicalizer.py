@@ -89,6 +89,8 @@ class GurobiCanonicalizer(object):
         M = np.maximum(np.max(np.abs(all_ub)), np.max(np.abs(all_lb)))
         q = self.model_to_opt.addVar(ub=M)
 
+        all_gammas = []
+
         for expr, lb, ub in zip(expr_list, lb_list, ub_list):
             n = expr.get_output_dim()
             rhs_gp_expr = self.lin_expr_to_gp_expr(expr)
@@ -113,8 +115,17 @@ class GurobiCanonicalizer(object):
                 self.model_to_opt.addConstr(q >= up[i] + un[i])
                 self.model_to_opt.addConstr(q <= up[i] + un[i] + M * (1 - gamma[i]))
 
+            all_gammas.append(gamma)
+
+        gamma_constr = 0
+        for gamma in all_gammas:
+            gamma_constr += gp.quicksum(gamma)
+        self.model_to_opt.addConstr(gamma_constr == 1)
+
         self.model_to_opt.setObjective(q, gp.GRB.MAXIMIZE)
         self.model_to_opt.update()
+
+        # return up, un, gamma, q
 
     def solve_model(self):
         self.model_to_opt.optimize()

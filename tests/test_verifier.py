@@ -7,7 +7,7 @@ from mipalgover.verifier import Verifier
 
 def test_verifier():
     m, n = 2, 3
-    np.random.seed(0)
+    np.random.seed(1)
 
     x_test = np.random.uniform(size=(n,))
     A = np.random.normal(size=(m, n))
@@ -46,7 +46,7 @@ def test_verifier():
 
         z_resid = np.hstack([xnew - xk, ynew - yk])
         DR_resids.append(np.max(np.abs(z_resid)))
-        # DR_resids.append(np.max(np.abs(ynew - yk)))
+        # DR_resids.append(np.max(np.abs(xnew - xk)))
 
         DR_x.append(xnew)
         DR_y.append(ynew)
@@ -59,7 +59,7 @@ def test_verifier():
     VP = Verifier()
 
     # c_param = Verifier.add_param(n, lb=c, ub=c)
-    b_offset = 0
+    b_offset = 0.1
     c_param = VP.add_param(n, lb=c, ub=c)
     b_param = VP.add_param(m, lb=b-b_offset, ub=b+b_offset)  # add boxes here when testing
 
@@ -86,19 +86,60 @@ def test_verifier():
         x[k] = VP.relu_step(x[k-1] - t * (c_param - A.T @ y[k-1]))
         y[k] = y[k-1] - t * (A @ (2 * x[k] - x[k-1]) - b_param)
 
-        VP.set_zero_objective()
-        # VP.set_infinity_norm_objective(y[k] - y[k-1])
-        # VP.set_infinity_norm_objective([x[k] - x[k-1], y[k] - y[k-1]])
+        # VP.set_zero_objective()
+        # up, un, gamma, q = VP.set_infinity_norm_objective(y[k] - y[k-1])
+        # VP.set_infinity_norm_objective(x[k] - x[k-1])
+        VP.set_infinity_norm_objective([x[k] - x[k-1], y[k] - y[k-1]])
         res = VP.solve()
         all_res.append(res)
 
     print(f'VP resids: {all_res}')
     print(f'DR resids: {DR_resids[:K]}')
 
-    for k in range(1, K+1):
-        print(f'k={k}')
-        print(f'DR_x: {DR_x[k]}')
-        print(f'VP_x: {VP.extract_sol(x[k])}')
-        print(f'DR_y: {DR_y[k]}')
-        print(f'VP_y: {VP.extract_sol(y[k])}')
-        print(f'VP_y_calc: {VP.extract_sol(y[k-1]) - t * (A @ (2 * VP.extract_sol(x[k]) - VP.extract_sol(x[k-1])) - VP.extract_sol(b_param))}')
+    # for k in range(1, K+1):
+    #     print(f'k={k}')
+    #     print(f'DR_x: {DR_x[k]}')
+    #     print(f'VP_x: {VP.extract_sol(x[k])}')
+    #     print(f'DR_y: {DR_y[k]}')
+    #     print(f'VP_y: {VP.extract_sol(y[k])}')
+    #     print(f'VP_y_calc: {VP.extract_sol(y[k-1]) - t * (A @ (2 * VP.extract_sol(x[k]) - VP.extract_sol(x[k-1])) - VP.extract_sol(b_param))}')
+
+    print(f'b_c: {b}')
+    print(VP.extract_sol(b_param))
+    b_test = VP.extract_sol(b_param)
+
+    xK = VP.extract_sol(x[K])
+    xKminus1 = VP.extract_sol(x[K-1])
+    yK = VP.extract_sol(y[K])
+    yKminus1 = VP.extract_sol(y[K-1])
+
+    test_resid = np.max(np.abs(np.hstack([xK-xKminus1, yK-yKminus1])))
+    # test_resid = np.max(np.abs(np.hstack([xK-xKminus1])))
+    print(test_resid)
+
+    xk = np.ones(n)
+    yk = np.ones(m)
+
+    t = 0.1
+    DR_resids = []
+    DR_x = [xk]
+    DR_y = [yk]
+    for _ in range(K):
+        xnew = proj(xk - t * (c - A.T @ yk))
+        ynew = yk - t * (A @ (2 * xnew - xk) - b_test)
+
+        z_resid = np.hstack([xnew - xk, ynew - yk])
+        DR_resids.append(np.max(np.abs(z_resid)))
+        # DR_resids.append(np.max(np.abs(xnew - xk)))
+
+        DR_x.append(xnew)
+        DR_y.append(ynew)
+
+        xk = xnew
+        yk = ynew
+
+    print(DR_resids)
+    # print(up.X, un.X, gamma.X, q.X)
+
+    assert np.all(np.array(DR_resids) <= np.array(all_res) + 1e-7)
+    assert np.abs(DR_resids[-1] - test_resid) <= 1e-7

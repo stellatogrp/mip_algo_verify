@@ -143,6 +143,7 @@ class Verifier(object):
             ub_list.append(expr_ub)
 
         self.canonicalizer.set_infinity_norm_objective(expr_list, lb_list, ub_list)
+        self.canonicalizer.set_infinity_norm_objective(expr_list, lb_list, ub_list)
 
     def solve(self):
         res = self.canonicalizer.solve_model()
