@@ -125,8 +125,6 @@ class GurobiCanonicalizer(object):
         self.model_to_opt.setObjective(q, gp.GRB.MAXIMIZE)
         self.model_to_opt.update()
 
-        # return up, un, gamma, q
-
     def solve_model(self):
         self.model_to_opt.optimize()
         return self.model_to_opt.objVal
