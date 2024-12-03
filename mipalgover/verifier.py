@@ -14,7 +14,8 @@ class Verifier(object):
 
         self.num_obbt = num_obbt
         self.postprocess = postprocess
-        self.objecttive = None
+        self.objective = None
+        self.obbt = True
 
         self.params = []
         self.iterates = []
@@ -81,23 +82,34 @@ class Verifier(object):
         step = ReluStep(out_iterate, rhs_expr)
 
         rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
-        # step.rhs_lb = rhs_lb  # need to update lb/ub
-        # step.rhs_ub = rhs_ub
         step.update_rhs_lb(rhs_lb)
         step.update_rhs_ub(rhs_ub)
 
-        out_lb = relu(rhs_lb)
-        out_ub = relu(rhs_ub)
+        relu_rhs_lb = relu(rhs_lb)
+        relu_rhs_ub = relu(rhs_ub)
+
+        # TODO: OBBT
+        if self.obbt:
+            obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+
+            step.update_rhs_lb(obbt_lb)
+            step.update_rhs_ub(obbt_ub)
+
+            relu_obbt_lb = relu(obbt_lb)
+            relu_obbt_ub = relu(obbt_ub)
+
+            out_lb = relu_obbt_lb
+            out_ub = relu_obbt_ub
+        else:
+            out_lb = relu_rhs_lb
+            out_ub = relu_rhs_ub
 
         self.iterates.append(out_iterate)
         self.lower_bounds[out_iterate] = out_lb
         self.upper_bounds[out_iterate] = out_ub
 
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
-        # TODO: add constraints to the gurobi problem
         self.canonicalizer.add_relu_constraints(step)
-
-        # TODO: OBBT
 
         return out_iterate
 
@@ -123,14 +135,9 @@ class Verifier(object):
         return out_lb, out_ub
 
     def set_zero_objective(self):
-        # self.objective = obj
-
-        # TODO: replace once we have the infty norm objectives
         self.canonicalizer.set_zero_objective()
 
     def set_infinity_norm_objective(self, expr_list):
-        # expr_lb, expr_ub = self.linear_bound_prop(expr)
-        # self.canonicalizer.set_infinity_norm_objective(expr, expr_lb, expr_ub)
 
         if not isinstance(expr_list, list):
             expr_list = [expr_list]

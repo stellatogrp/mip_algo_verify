@@ -139,7 +139,6 @@ def test_verifier():
         yk = ynew
 
     print(DR_resids)
-    # print(up.X, un.X, gamma.X, q.X)
 
     assert np.all(np.array(DR_resids) <= np.array(all_res) + 1e-7)
     assert np.abs(DR_resids[-1] - test_resid) <= 1e-7

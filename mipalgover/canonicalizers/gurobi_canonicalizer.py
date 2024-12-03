@@ -73,6 +73,43 @@ class GurobiCanonicalizer(object):
         self.step_constr_map[step] = out_constraints
         self.model.update()
 
+    def obbt(self, linexpr):
+        # create/solve the obbt problem for all elements in linexpr
+
+        # obbt_model = self.model.relax()
+        self.model.update()
+        n = linexpr.get_output_dim()
+
+        lb_out = np.zeros(n)
+        ub_out = np.zeros(n)
+
+        gp_expr = self.lin_expr_to_gp_expr(linexpr)
+
+        for sense in [gp.GRB.MINIMIZE, gp.GRB.MAXIMIZE]:
+            for i in range(n):
+                self.model.setObjective(gp_expr[i], sense)
+                self.model.update()
+
+                obbt_model = self.model.relax()
+                # obbt_model.Params.OutputFlag = 0
+                obbt_model.update()
+                obbt_model.optimize()
+
+                if obbt_model.status != gp.GRB.OPTIMAL:
+                    print('bound tighting failed, GRB model status:', obbt_model.status)
+                    exit(0)
+                    return None
+
+                if sense == gp.GRB.MAXIMIZE:
+                    ub_out[i] = obbt_model.objVal
+                else:
+                    lb_out[i] = obbt_model.objVal
+
+        # reset objective
+        self.model.setObjective(0)
+
+        return lb_out, ub_out
+
     def set_zero_objective(self):
         # this function is mostly just for debugging the constraints
 
@@ -136,11 +173,11 @@ class GurobiCanonicalizer(object):
             gp_var_val = np.zeros(gp_var.shape)
 
             for i in range(gp_var.shape[0]):
-                # print(i)
-                # rel_model.getVarByName(var.VarName.item()).X
-                # print(self.model_to_opt.getVarByName(gp_var[i].VarName.item()).X)
                 gp_var_val[i] = self.model_to_opt.getVarByName(gp_var[i].VarName.item()).X
 
             out += value @ gp_var_val
 
         return out
+
+    def extract_var_by_name(self, var, new_model):
+        return new_model.getVarByName(var.VarName)
