@@ -79,6 +79,7 @@ class Verifier(object):
     #     return out_iterate
 
     def relu_step(self, rhs_expr):
+        # TODO: add partial relu step, i.e. the range of indices to project only
         out_iterate = Vector(rhs_expr.get_output_dim())
         step = ReluStep(out_iterate, rhs_expr)
 
@@ -110,6 +111,8 @@ class Verifier(object):
 
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_relu_constraints(step)
+
+        # if convexification flag
 
         return out_iterate
 

@@ -57,6 +57,7 @@ def test_ista():
         print(k)
 
         z[k] = VP.soft_threshold_step(At @ z[k-1] + Bt @ b_param, lambda_t)
+
         VP.set_infinity_norm_objective(z[k] - z[k-1])
         res = VP.solve()
         all_res.append(res)

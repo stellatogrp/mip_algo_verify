@@ -7,7 +7,6 @@ class GurobiCanonicalizer(object):
     def __init__(self,
                  gurobi_params={}):
         self.vector_var_map = {}
-        self.model = None
         self.model = gp.Model()
         self.model_to_opt = None
         # TODO: initialize model with gurobi params
