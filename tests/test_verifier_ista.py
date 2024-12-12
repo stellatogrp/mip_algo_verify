@@ -25,7 +25,10 @@ def test_ista():
     print(res)
     print(x.value)
 
-    t = 0.1
+    # t = 0.1
+    lambd_max = np.max(np.real(np.linalg.eigvals(A.T @ A)))
+    print(lambd_max)
+    t = 1 / lambd_max
 
     print('testing ista')
     xk = np.ones(n)
@@ -40,7 +43,14 @@ def test_ista():
     print(xk)
     assert np.linalg.norm(x.value - xk) <= 1e-7
 
-    VP = Verifier()
+    init_C = 0.5 # placeholder for now
+
+    def theory_func(k):
+        if k == 1:
+            return np.inf
+        return 2 * init_C / np.sqrt((k-1) * (k+2))
+
+    VP = Verifier(theory_func=theory_func)
     b_offset = 0.5
     b_param = VP.add_param(m, lb=b-b_offset, ub=b+b_offset)
 
@@ -57,6 +67,7 @@ def test_ista():
         print(k)
 
         z[k] = VP.soft_threshold_step(At @ z[k-1] + Bt @ b_param, lambda_t)
+        VP.theory_bound(k, z[k], z[k-1])
 
         VP.set_infinity_norm_objective(z[k] - z[k-1])
         res = VP.solve()

@@ -193,6 +193,23 @@ class GurobiCanonicalizer(object):
 
         return lb_out, ub_out
 
+
+    def add_theory_cut(self, C, target_expr, bound_lb, bound_ub):
+        if C == np.inf:
+            return
+        target_gp_expr = self.lin_expr_to_gp_expr(target_expr)
+        self.model.addConstr(target_gp_expr >= bound_lb - C)
+        self.model.addConstr(target_gp_expr <= bound_ub + C)
+        self.model.update()
+
+
+    def equality_constraint(self, lhs_expr, rhs_expr):
+        lhs_gp_expr = self.lin_expr_to_gp_expr(lhs_expr)
+        rhs_gp_expr = self.lin_expr_to_gp_expr(rhs_expr)
+        self.model.addConstr(lhs_gp_expr == rhs_gp_expr)
+        self.model.update()
+
+
     def set_zero_objective(self):
         # this function is mostly just for debugging the constraints
 

@@ -11,11 +11,13 @@ class Verifier(object):
     def __init__(self,
                  num_obbt=3,
                  postprocess=False,
+                 theory_func=None,
                  solver='gurobi'):
 
         self.num_obbt = num_obbt
         self.postprocess = postprocess
         self.objective = None
+        self.theory_func = theory_func
         self.obbt = True
 
         self.params = []
@@ -77,6 +79,11 @@ class Verifier(object):
     #     # TODO: Note that this might not be necessary at all given the LinExpr structure
 
     #     return out_iterate
+
+    def implicit_linear_step(self, lhs_expr, rhs_expr):
+        # need to think about best way to bound prop here/set up the api
+        exit(0)
+        self.add_equality_constraint(lhs_expr, rhs_expr)
 
     def relu_step(self, rhs_expr):
         # TODO: add partial relu step, i.e. the range of indices to project only
@@ -154,6 +161,15 @@ class Verifier(object):
 
     def add_constraint_set(self, constraint_set):
         self.constraint_sets.append(constraint_set)
+
+    def equality_constraint(self, lhs_expr, rhs_expr):
+        self.canonicalizer.add_equality_constraint(lhs_expr, rhs_expr)
+
+    def theory_bound(self, k, target_expr, bound_expr):
+        # TODO: return fractional improvement when compared to existing bound
+        C = self.theory_func(k)
+        bound_lb, bound_ub = self.linear_bound_prop(bound_expr)
+        self.canonicalizer.add_theory_cut(C, target_expr, bound_lb, bound_ub)
 
     def linear_bound_prop(self, expr):
         n = expr.get_output_dim()
