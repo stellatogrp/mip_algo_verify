@@ -63,25 +63,17 @@ class Verifier(object):
     def add_step(self, step):
         self.steps.append(step)
 
-    # def add_explicit_affine_step(self, rhs_expr):
-    #     '''
-    #         Process:
-    #             - Construct out iterate
-    #             - Construct affine step object
-    #             - Do the interval bound propagations as necessary
-    #             - Add the iterate and constraints to the canonicalizer
-    #             - Do the OBBT (if self.num_obbt >= 0`)
-    #             - Return the out iterate Vector object
-    #     '''
-    #     out_iterate = Vector(rhs_expr.get_output_dim())
-    #     step = AffineStep(out_iterate, rhs_expr)
-
-    #     # TODO: Note that this might not be necessary at all given the LinExpr structure
-
-    #     return out_iterate
-
     def implicit_linear_step(self, lhs_expr, rhs_expr):
         # need to think about best way to bound prop here/set up the api
+        '''
+            Process:
+                - Construct out iterate
+                - Construct affine step object
+                - Do the interval bound propagations as necessary
+                - Add the iterate and constraints to the canonicalizer
+                - Do the OBBT (if self.num_obbt >= 0`)
+                - Return the out iterate Vector object
+        '''
         exit(0)
         self.add_equality_constraint(lhs_expr, rhs_expr)
 
