@@ -158,8 +158,6 @@ class GurobiCanonicalizer(object):
 
     def obbt(self, linexpr):
         # create/solve the obbt problem for all elements in linexpr
-
-        # obbt_model = self.model.relax()
         self.model.update()
         n = linexpr.get_output_dim()
 
@@ -254,6 +252,7 @@ class GurobiCanonicalizer(object):
 
             all_gammas.append(gamma)
 
+        # need 1 gamma across all vectors in the list
         gamma_constr = 0
         for gamma in all_gammas:
             gamma_constr += gp.quicksum(gamma)
