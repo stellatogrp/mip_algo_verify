@@ -196,8 +196,13 @@ class GurobiCanonicalizer(object):
         if C == np.inf:
             return
         target_gp_expr = self.lin_expr_to_gp_expr(target_expr)
-        self.model.addConstr(target_gp_expr >= bound_lb - C)
-        self.model.addConstr(target_gp_expr <= bound_ub + C)
+        if target_expr.is_leaf:
+            # directly update the lb/ub parameters if possible
+            target_gp_expr.lb = bound_lb - C
+            target_gp_expr.ub = bound_ub + C
+        else:
+            self.model.addConstr(target_gp_expr >= bound_lb - C)
+            self.model.addConstr(target_gp_expr <= bound_ub + C)
         self.model.update()
 
 
