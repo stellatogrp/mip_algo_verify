@@ -157,11 +157,17 @@ class Verifier(object):
     def equality_constraint(self, lhs_expr, rhs_expr):
         self.canonicalizer.add_equality_constraint(lhs_expr, rhs_expr)
 
-    def theory_bound(self, k, target_expr, bound_expr):
-        # TODO: return fractional improvement when compared to existing bound
+    def theory_bound(self, k, target_expr, bound_expr, return_improv_frac=True):
         C = self.theory_func(k)
         bound_lb, bound_ub = self.linear_bound_prop(bound_expr)
+        if target_expr.is_leaf:
+            self.lower_bounds[target_expr], lb_improv_frac = update_lb(self.lower_bounds[target_expr], bound_lb - C)
+            self.upper_bounds[target_expr], ub_improv_frac = update_ub(self.upper_bounds[target_expr], bound_ub + C)
+            improv_frac = (lb_improv_frac + ub_improv_frac) / 2.
         self.canonicalizer.add_theory_cut(C, target_expr, bound_lb, bound_ub)
+
+        if return_improv_frac:
+            return improv_frac
 
     def linear_bound_prop(self, expr):
         n = expr.get_output_dim()
@@ -234,3 +240,15 @@ def relu(v):
 
 def soft_threshold(x, gamma):
         return np.sign(x) * np.maximum(np.abs(x) - gamma, 0)
+
+
+def update_lb(old_lb, new_lb):
+    n = old_lb.shape[0]
+    improv_count = (new_lb > old_lb).sum()
+    return np.maximum(old_lb, new_lb), improv_count / n
+
+
+def update_ub(old_ub, new_ub):
+    n = old_ub.shape[0]
+    improv_count = (new_ub < old_ub).sum()
+    return np.minimum(old_ub, new_ub), improv_count / n
