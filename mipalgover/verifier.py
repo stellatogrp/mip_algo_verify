@@ -25,12 +25,6 @@ class Verifier(object):
         self.steps = []
         self.constraint_sets = []
 
-        # TODO: think if we need to separate out param/iterate bounds
-        # self.param_lower_bounds = {}
-        # self.param_upper_bounds = {}
-        # self.iterate_lower_bounds = {}
-        # self.iterate_upper_bounds = {}
-
         if solver == 'gurobi':
             self.canonicalizer = GurobiCanonicalizer()
 
@@ -77,17 +71,26 @@ class Verifier(object):
         exit(0)
         self.add_equality_constraint(lhs_expr, rhs_expr)
 
-    def relu_step(self, rhs_expr):
+    def relu_step(self, rhs_expr, proj_ranges=None):
         # TODO: add partial relu step, i.e. the range of indices to project only
+        # for partial relu, change the relu object to have a range parameter, and also adjust the bound updates
+        # then go into canonicalizer and change the constraints
+        if proj_ranges is None:
+            proj_ranges = [(0, rhs_expr.get_output_dim())]
+        else:
+            proj_ranges = list_upcast(proj_ranges)
+
         out_iterate = Vector(rhs_expr.get_output_dim())
-        step = ReluStep(out_iterate, rhs_expr)
+        step = ReluStep(out_iterate, rhs_expr, proj_ranges=proj_ranges)
 
         rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
         step.update_rhs_lb(rhs_lb)
         step.update_rhs_ub(rhs_ub)
 
-        relu_rhs_lb = relu(rhs_lb)
-        relu_rhs_ub = relu(rhs_ub)
+        # TODO: update this relu function to project correctly
+        relu_rhs_lb = relu(rhs_lb, proj_ranges=proj_ranges)
+        relu_rhs_ub = relu(rhs_ub, proj_ranges=proj_ranges)
+
 
         if self.obbt:
             obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
@@ -95,8 +98,8 @@ class Verifier(object):
             step.update_rhs_lb(obbt_lb)
             step.update_rhs_ub(obbt_ub)
 
-            relu_obbt_lb = relu(obbt_lb)
-            relu_obbt_ub = relu(obbt_ub)
+            relu_obbt_lb = relu(obbt_lb, proj_ranges=proj_ranges)
+            relu_obbt_ub = relu(obbt_ub, proj_ranges=proj_ranges)
 
             out_lb = relu_obbt_lb
             out_ub = relu_obbt_ub
@@ -157,6 +160,7 @@ class Verifier(object):
     def equality_constraint(self, lhs_expr, rhs_expr):
         self.canonicalizer.add_equality_constraint(lhs_expr, rhs_expr)
 
+    # TODO: consider if we should make the theory func local to this func and not a verifier property
     def theory_bound(self, k, target_expr, bound_expr, return_improv_frac=True):
         C = self.theory_func(k)
         bound_lb, bound_ub = self.linear_bound_prop(bound_expr)
@@ -166,6 +170,7 @@ class Verifier(object):
             improv_frac = (lb_improv_frac + ub_improv_frac) / 2.
         self.canonicalizer.add_theory_cut(C, target_expr, bound_lb, bound_ub)
 
+        # TODO: think if we might need to safeguard this with nonleaf theory bounds
         if return_improv_frac:
             return improv_frac
 
@@ -234,8 +239,18 @@ def upcast(n, val):
         raise TypeError(f'lb or ub needs to be an int, float, or np.ndarray. Got {type(val)}')
 
 
-def relu(v):
-    return np.maximum(v, 0)
+def relu(v, proj_ranges=None):
+    if proj_ranges is None:
+        return np.maximum(v, 0)
+    else:
+        out = v.copy()
+
+        for curr_range in proj_ranges:
+            left = curr_range[0]
+            right = curr_range[1]
+            out[left: right] = np.maximum(v[left: right], 0)
+
+        return out
 
 
 def soft_threshold(x, gamma):
@@ -252,3 +267,11 @@ def update_ub(old_ub, new_ub):
     n = old_ub.shape[0]
     improv_count = (new_ub < old_ub).sum()
     return np.minimum(old_ub, new_ub), improv_count / n
+
+
+def list_upcast(val):
+    # if val is a list then keep it as is otherwise put it in a list
+    if isinstance(val, list):
+        return val
+    else:
+        return [val]

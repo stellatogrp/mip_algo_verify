@@ -52,12 +52,21 @@ class GurobiCanonicalizer(object):
         rhs_gp_expr = self.lin_expr_to_gp_expr(rhs)
         rhs_lb = step.rhs_lb
         rhs_ub = step.rhs_ub
-        n = lhs.get_output_dim()
+        # n = lhs.get_output_dim()
 
         out_constraints = []
         out_new_vars = {}
 
-        for i in range(n):
+        proj_indices = step.proj_indices
+        nonproj_indices = step.nonproj_indices
+
+        # after ranges are added, remove the range(n) and add the constraints when needed
+        # make sure to enforce equality constraints between lhs and rhs for other indices
+
+        for i in nonproj_indices:
+            out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == rhs_gp_expr[i]))
+
+        for i in proj_indices:
             if rhs_ub[i] <= 0:
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == 0))
             elif rhs_lb[i] > 0:
