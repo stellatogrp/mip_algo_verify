@@ -2,6 +2,7 @@ import numpy as np
 
 from mipalgover.canonicalizers.gurobi_canonicalizer import GurobiCanonicalizer
 from mipalgover.steps.relu import ReluStep
+from mipalgover.steps.saturated_linear import SaturatedLinearStep
 from mipalgover.steps.soft_threshold import SoftThresholdStep
 from mipalgover.vector import Vector
 
@@ -72,9 +73,6 @@ class Verifier(object):
         self.add_equality_constraint(lhs_expr, rhs_expr)
 
     def relu_step(self, rhs_expr, proj_ranges=None):
-        # TODO: add partial relu step, i.e. the range of indices to project only
-        # for partial relu, change the relu object to have a range parameter, and also adjust the bound updates
-        # then go into canonicalizer and change the constraints
         if proj_ranges is None:
             proj_ranges = [(0, rhs_expr.get_output_dim())]
         else:
@@ -87,10 +85,8 @@ class Verifier(object):
         step.update_rhs_lb(rhs_lb)
         step.update_rhs_ub(rhs_ub)
 
-        # TODO: update this relu function to project correctly
         relu_rhs_lb = relu(rhs_lb, proj_ranges=proj_ranges)
         relu_rhs_ub = relu(rhs_ub, proj_ranges=proj_ranges)
-
 
         if self.obbt:
             obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
@@ -118,6 +114,12 @@ class Verifier(object):
 
         return out_iterate
 
+    def saturated_linear_step(self, rhs_expr, l, u):
+        out_iterate = Vector(rhs_expr.get_output_dim())
+        step = SaturatedLinearStep(out_iterate, rhs_expr, l, u)
+        print(step)
+        exit(0)
+
     def soft_threshold_step(self, rhs_expr, lambd):
         out_iterate = Vector(rhs_expr.get_output_dim())
         step = SoftThresholdStep(out_iterate, rhs_expr, lambd)
@@ -129,7 +131,7 @@ class Verifier(object):
         st_rhs_lb = soft_threshold(rhs_lb, lambd)
         st_rhs_ub = soft_threshold(rhs_ub, lambd)
 
-        if self.obbt: # TODO: add this, similar to relu
+        if self.obbt:
             obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
 
             step.update_rhs_lb(obbt_lb)
