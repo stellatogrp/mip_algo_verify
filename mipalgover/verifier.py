@@ -117,8 +117,39 @@ class Verifier(object):
     def saturated_linear_step(self, rhs_expr, l, u):
         out_iterate = Vector(rhs_expr.get_output_dim())
         step = SaturatedLinearStep(out_iterate, rhs_expr, l, u)
-        print(step)
-        exit(0)
+
+        rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
+        step.update_rhs_lb(rhs_lb)
+        step.update_rhs_ub(rhs_ub)
+
+        sl_rhs_lb = saturated_linear(rhs_lb, l, u)
+        sl_rhs_ub = saturated_linear(rhs_ub, l, u)
+
+        if self.obbt:
+            obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+
+            step.update_rhs_lb(obbt_lb)
+            step.update_rhs_ub(obbt_ub)
+
+            sl_obbt_lb = saturated_linear(obbt_lb, l, u)
+            sl_obbt_ub = saturated_linear(obbt_ub, l, u)
+
+            out_lb = sl_obbt_lb
+            out_ub = sl_obbt_ub
+        else:
+            out_lb = sl_rhs_lb
+            out_ub = sl_rhs_ub
+
+        self.iterates.append(out_iterate)
+        self.lower_bounds[out_iterate] = out_lb
+        self.upper_bounds[out_iterate] = out_ub
+
+        self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+        self.canonicalizer.add_saturated_linear_constraints(step, out_lb, out_ub)
+
+        # exit(0)
+
+        return out_iterate
 
     def soft_threshold_step(self, rhs_expr, lambd):
         out_iterate = Vector(rhs_expr.get_output_dim())
@@ -253,6 +284,10 @@ def relu(v, proj_ranges=None):
             out[left: right] = np.maximum(v[left: right], 0)
 
         return out
+
+
+def saturated_linear(x, l, u):
+    return np.minimum(np.maximum(x, l), u)
 
 
 def soft_threshold(x, gamma):

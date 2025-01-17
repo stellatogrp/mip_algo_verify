@@ -81,6 +81,87 @@ class GurobiCanonicalizer(object):
         self.step_constr_map[step] = out_constraints
         self.model.update()
 
+    def add_saturated_linear_constraints(self, step, out_lb, out_ub):
+        lhs = step.lhs_expr
+        rhs = step.rhs_expr
+        assert lhs in self.vector_var_map
+        l, u = step.l, step.u
+
+        lhs_gp_expr = self.lin_expr_to_gp_expr(lhs)
+        rhs_gp_expr = self.lin_expr_to_gp_expr(rhs)
+        rhs_lb = step.rhs_lb
+        rhs_ub = step.rhs_ub
+        n = lhs.get_output_dim()
+
+        out_constraints = []
+        new_w1 = {}
+        new_w2 = {}
+
+        for i in range(n):
+            if rhs_lb[i] >= u[i]:
+                out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == u[i]))
+            elif rhs_ub[i] <= l[i]:
+                out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == l[i]))
+            elif rhs_lb[i] >= l[i] and rhs_ub[i] <= u[i]:
+                out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == rhs_gp_expr[i]))
+            else:
+                if rhs_lb[i] < l[i] and rhs_ub[i] > u[i]:
+                    new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+
+                    # following two are redundant due to preprocessing bounds on the left hand side iterate
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= u[i]))
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= l[i]))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= (u[i] - l[i]) / (u[i] - rhs_lb[i]) * (rhs_gp_expr[i] - u[i]) + u[i]))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= (u[i] - l[i]) / (rhs_ub[i] - l[i]) * (rhs_gp_expr[i] - l[i]) + l[i]))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= u[i] - (u[i] - l[i]) * (1 - new_w1[i])))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= l[i] + (u[i] - l[i]) * (1 - new_w2[i])))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i] - (rhs_ub[i] - rhs_lb[i]) * new_w1[i]))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i] + (rhs_ub[i] - rhs_lb[i]) * new_w2[i]))
+
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] >= u[i] + (rhs_lb[i] - u[i]) * (1 - new_w1[i])))
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] <= u[i] + (rhs_ub[i] - u[i]) * new_w1[i]))
+
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] >= l[i] + (rhs_lb[i] - l[i]) * new_w2[i]))
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] <= l[i] + (rhs_ub[i] - l[i]) * (1 - new_w2[i])))
+
+                    out_constraints.append(self.model.addConstr(new_w1[i] + new_w2[i] <= 1))
+                elif rhs_lb[i] < l[i] and rhs_ub[i] < u[i]:
+                    new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= l[i]))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= (u[i] - l[i]) / (u[i] - rhs_lb[i]) * (rhs_gp_expr[i] - u[i]) + u[i]))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= l[i] + (u[i] - l[i]) * (1 - new_w2[i])))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i] + (rhs_ub[i] - rhs_lb[i]) * new_w2[i]))
+
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] >= l[i] + (rhs_lb[i] - l[i]) * new_w2[i]))
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] <= l[i] + (rhs_ub[i] - l[i]) * (1 - new_w2[i])))
+
+                elif rhs_lb[i] > l[i] and rhs_ub[i] > u[i]:
+                    new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= u[i]))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= (u[i] - l[i]) / (rhs_ub[i] - l[i]) * (rhs_gp_expr[i] - l[i]) + l[i]))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= u[i] - (u[i] - l[i]) * (1 - new_w1[i])))
+
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i] - (rhs_ub[i] - rhs_lb[i]) * new_w1[i]))
+
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] >= u[i] + (rhs_lb[i] - u[i]) * (1 - new_w1[i])))
+                    out_constraints.append(self.model.addConstr(rhs_gp_expr[i] <= u[i] + (rhs_ub[i] - u[i]) * new_w1[i]))
+
+                else:
+                    raise RuntimeError('Unreachable code')
+
+        self.step_constr_map[step] = out_constraints
+        self.model.update()
+
     def add_soft_threshold_constraints(self, step, lhs_lb, lhs_ub):
         lhs = step.lhs_expr
         rhs = step.rhs_expr
