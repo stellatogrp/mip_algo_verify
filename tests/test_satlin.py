@@ -43,12 +43,12 @@ def test_satlin():
     assert np.linalg.norm(x.value - zk) <= 1e-7
 
     VP = Verifier()
-    q_offset = 0.1
+    q_offset = 1
     q_param = VP.add_param(n, lb=q-q_offset, ub=q+q_offset)
 
     z0 = VP.add_initial_iterate(n, lb=z0_init, ub=z0_init)
 
-    K = 5
+    K = 12
     z = [None for _ in range(K+1)]
     z[0] = z0
 
@@ -62,20 +62,31 @@ def test_satlin():
         all_res.append(res)
 
     print(f'opt q_param at last K: {VP.extract_sol(q_param)}')
-
     print(f'VP resids: {all_res}')
+
+    # print('extracting values from VP:')
+    # for k in range(K+1):
+    #     print(f'-K={k}-')
+    #     print(VP.extract_sol(z[k]))
+
+    # z_test = np.array([-0.91651, 1, 0])
+    # print('test grad step from K-1:', z_test - t * (P @ z_test + VP.extract_sol(q_param)))
+    # print('bounds:', VP.lower_bounds[VP.iterates[-1]], VP.upper_bounds[VP.iterates[-1]])
 
     zk = z0_init
     q = VP.extract_sol(q_param)
     PGD_resids = []
 
+    # print('z0_init:', z0_init)
     for k in range(K):
         znew = proj(zk - t * (P @ zk + q), l, u)
+        # print('test zk:', znew)
         PGD_resids.append(np.max(np.abs(znew - zk)))
         zk = znew
 
-    print(PGD_resids)
+    print('PGD resids with last K:', PGD_resids)
     assert np.all(np.array(PGD_resids) <= np.array(all_res) + 1e-7)
+    assert np.abs(PGD_resids[-1] - all_res[-1]) <= 1e-6
 
 
 def proj(v, l, u):

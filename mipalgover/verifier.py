@@ -147,8 +147,6 @@ class Verifier(object):
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_saturated_linear_constraints(step, out_lb, out_ub)
 
-        # exit(0)
-
         return out_iterate
 
     def soft_threshold_step(self, rhs_expr, lambd):

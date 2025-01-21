@@ -98,6 +98,15 @@ class GurobiCanonicalizer(object):
         new_w2 = {}
 
         for i in range(n):
+            # if i == 0:
+            #     print(rhs_lb[i], l[i])
+            #     print(rhs_ub[i], u[i])
+            #     print(rhs_lb[i] >= u[i])
+            #     print(rhs_ub[i] <= l[i])
+            #     print(rhs_lb[i] >= l[i] and rhs_ub[i] <= u[i])
+            #     print(rhs_lb[i] < l[i] and rhs_ub[i] > u[i])
+            #     print(rhs_lb[i] < l[i] and rhs_ub[i] < u[i])
+            #     print(rhs_lb[i] > l[i] and rhs_ub[i] > u[i])
             if rhs_lb[i] >= u[i]:
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == u[i]))
             elif rhs_ub[i] <= l[i]:
@@ -132,10 +141,13 @@ class GurobiCanonicalizer(object):
                 elif rhs_lb[i] < l[i] and rhs_ub[i] < u[i]:
                     new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
                     # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= l[i]))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i]))
 
-                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= (u[i] - l[i]) / (u[i] - rhs_lb[i]) * (rhs_gp_expr[i] - u[i]) + u[i]))
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= (u[i] - l[i]) / (u[i] - rhs_lb[i]) * (rhs_gp_expr[i] - u[i]) + u[i]))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= (rhs_ub[i] - l[i]) / (rhs_ub[i] - rhs_lb[i]) * (rhs_gp_expr[i] - rhs_ub[i]) + rhs_ub[i]))
 
-                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= l[i] + (u[i] - l[i]) * (1 - new_w2[i])))
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= l[i] + (u[i] - l[i]) * (1 - new_w2[i])))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= l[i] + (rhs_ub[i] - l[i]) * (1 - new_w2[i])))
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i] + (rhs_ub[i] - rhs_lb[i]) * new_w2[i]))
 
@@ -146,10 +158,13 @@ class GurobiCanonicalizer(object):
                     new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
 
                     # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= u[i]))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i]))
 
-                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= (u[i] - l[i]) / (rhs_ub[i] - l[i]) * (rhs_gp_expr[i] - l[i]) + l[i]))
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= (u[i] - l[i]) / (rhs_ub[i] - l[i]) * (rhs_gp_expr[i] - l[i]) + l[i]))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= (u[i] - rhs_lb[i]) / (rhs_ub[i] - rhs_lb[i]) * (rhs_gp_expr[i] - rhs_lb[i]) + rhs_lb[i]))
 
-                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= u[i] - (u[i] - l[i]) * (1 - new_w1[i])))
+                    # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= u[i] - (u[i] - l[i]) * (1 - new_w1[i])))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= u[i] - (u[i] - rhs_lb[i]) * (1 - new_w1[i])))
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i] - (rhs_ub[i] - rhs_lb[i]) * new_w1[i]))
 
