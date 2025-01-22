@@ -42,7 +42,11 @@ def test_satlin():
     print('solution from pgd:', zk)
     assert np.linalg.norm(x.value - zk) <= 1e-7
 
-    VP = Verifier()
+    gurobi_params = {
+        'TimeLimit': 10,
+        'MIPGap': 1e-4,
+    }
+    VP = Verifier(solver_params=gurobi_params)
     q_offset = 1
     q_param = VP.add_param(n, lb=q-q_offset, ub=q+q_offset)
 

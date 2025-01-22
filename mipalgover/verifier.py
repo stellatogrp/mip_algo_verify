@@ -13,7 +13,8 @@ class Verifier(object):
                  num_obbt=3,
                  postprocess=False,
                  theory_func=None,
-                 solver='gurobi'):
+                 solver='gurobi',
+                 solver_params={}):
 
         self.num_obbt = num_obbt
         self.postprocess = postprocess
@@ -27,7 +28,7 @@ class Verifier(object):
         self.constraint_sets = []
 
         if solver == 'gurobi':
-            self.canonicalizer = GurobiCanonicalizer()
+            self.canonicalizer = GurobiCanonicalizer(gurobi_params=solver_params)
 
         self.lower_bounds = {}
         self.upper_bounds = {}

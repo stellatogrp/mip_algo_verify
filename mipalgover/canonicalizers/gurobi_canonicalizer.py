@@ -8,6 +8,10 @@ class GurobiCanonicalizer(object):
                  gurobi_params={}):
         self.vector_var_map = {}
         self.model = gp.Model()
+
+        for key, val in gurobi_params.items():
+            self.model.setParam(key, val)
+
         self.model_to_opt = None
         # TODO: initialize model with gurobi params
         self.step_constr_map = {}
