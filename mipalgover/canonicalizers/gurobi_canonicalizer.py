@@ -387,7 +387,6 @@ class GurobiCanonicalizer(object):
 
     def solve_model(self, **kwargs):
         print(kwargs)
-        exit(0)
         self.model_to_opt.optimize()
         return self.model_to_opt.objVal
 
