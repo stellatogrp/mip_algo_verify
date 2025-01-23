@@ -1,6 +1,7 @@
 import numpy as np
 
 from mipalgover.canonicalizers.gurobi_canonicalizer import GurobiCanonicalizer
+from mipalgover.steps.affine import AffineStep
 from mipalgover.steps.relu import ReluStep
 from mipalgover.steps.saturated_linear import SaturatedLinearStep
 from mipalgover.steps.soft_threshold import SoftThresholdStep
@@ -53,13 +54,13 @@ class Verifier(object):
 
         return iterate
 
-    def add_iterate(self, iterate):
-        self.iterates.append(iterate)
+    # def add_iterate(self, n):
+    #     return iterate
 
     def add_step(self, step):
         self.steps.append(step)
 
-    def implicit_linear_step(self, lhs_expr, rhs_expr):
+    def implicit_linear_step(self, lhs_mat, rhs_expr, lhs_mat_factorization=None):
         # need to think about best way to bound prop here/set up the api
         '''
             Process:
@@ -70,8 +71,23 @@ class Verifier(object):
                 - Do the OBBT (if self.num_obbt >= 0`)
                 - Return the out iterate Vector object
         '''
-        exit(0)
-        self.add_equality_constraint(lhs_expr, rhs_expr)
+        iterate = Vector(lhs_mat.shape[0])
+        self.iterates.append(iterate)
+
+        lhs_expr = lhs_mat @ iterate
+        step = AffineStep(lhs_expr, rhs_expr, lhs_mat=lhs_mat, lhs_mat_factorization=lhs_mat_factorization)
+        Minv_rhs = step.Minv_rhs()
+
+        iterate_lb, iterate_ub = self.linear_bound_prop(Minv_rhs)
+        assert np.all(iterate_lb <= iterate_ub)
+
+        self.lower_bounds[iterate] = iterate_lb
+        self.upper_bounds[iterate] = iterate_ub
+
+        self.canonicalizer.add_iterate_var(iterate, lb=iterate_lb, ub=iterate_ub)
+        self.canonicalizer.add_equality_constraint(lhs_mat @ iterate, rhs_expr)
+
+        return iterate
 
     def relu_step(self, rhs_expr, proj_ranges=None):
         if proj_ranges is None:
@@ -215,6 +231,7 @@ class Verifier(object):
             x_lb = self.lower_bounds[key]
             x_ub = self.upper_bounds[key]
             Ax_lower, Ax_upper = interval_bound_prop(value, x_lb, x_ub)
+
             assert np.all(Ax_lower <= Ax_upper)
 
             out_lb += Ax_lower

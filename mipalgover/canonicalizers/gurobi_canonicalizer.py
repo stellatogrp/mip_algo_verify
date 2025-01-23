@@ -26,6 +26,15 @@ class GurobiCanonicalizer(object):
     def add_iterate_var(self, iterate, lb=-np.inf, ub=np.inf):
         self.vector_var_map[iterate] = self.model.addMVar(iterate.n, lb=lb, ub=ub)
 
+    def add_equality_constraint(self, lhs_expr, rhs_expr):
+        lhs_gp_expr = self.lin_expr_to_gp_expr(lhs_expr)
+        rhs_gp_expr = self.lin_expr_to_gp_expr(rhs_expr)
+
+        # out_constraints = []
+        # out_constraints.append(self.model.addConstr(lhs_gp_expr == rhs_gp_expr))
+
+        self.model.addConstr(lhs_gp_expr == rhs_gp_expr)
+
     def update_vector_bounds(self, iterate, lb, ub):
         gp_var = self.vector_var_map[iterate]
 
