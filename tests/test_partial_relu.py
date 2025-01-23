@@ -53,7 +53,7 @@ def test_partial_nnqp():
         z[k] = VP.relu_step(z[k-1] - t * (P @ z[k-1] + q_param), proj_ranges=proj_ranges)
 
         VP.set_infinity_norm_objective(z[k] - z[k-1])
-        res = VP.solve()
+        res = VP.solve(full_convexify=True)
         all_res.append(res)
 
     print(f'opt q_param at last K: {VP.extract_sol(q_param)}')

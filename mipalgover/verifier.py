@@ -258,8 +258,8 @@ class Verifier(object):
 
         self.canonicalizer.set_infinity_norm_objective(expr_list, lb_list, ub_list)
 
-    def solve(self):
-        res = self.canonicalizer.solve_model()
+    def solve(self, **kwargs):
+        res = self.canonicalizer.solve_model(**kwargs)
         return res
 
     def extract_sol(self, iterate):

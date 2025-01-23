@@ -34,6 +34,7 @@ class GurobiCanonicalizer(object):
         # out_constraints.append(self.model.addConstr(lhs_gp_expr == rhs_gp_expr))
 
         self.model.addConstr(lhs_gp_expr == rhs_gp_expr)
+        self.model.update()
 
     def update_vector_bounds(self, iterate, lb, ub):
         gp_var = self.vector_var_map[iterate]
@@ -384,7 +385,9 @@ class GurobiCanonicalizer(object):
         self.model_to_opt.setObjective(q, gp.GRB.MAXIMIZE)
         self.model_to_opt.update()
 
-    def solve_model(self):
+    def solve_model(self, **kwargs):
+        print(kwargs)
+        exit(0)
         self.model_to_opt.optimize()
         return self.model_to_opt.objVal
 
@@ -403,3 +406,61 @@ class GurobiCanonicalizer(object):
 
     def extract_var_by_name(self, var, new_model):
         return new_model.getVarByName(var.VarName)
+
+
+def compute_v(wi, xi, b, L_hat, U_hat):
+    pass
+
+
+def add_conv_cuts(cfg, k, i, A, c, t, u_LB, u_UB, v_LB, v_UB, rel_u, rel_v):
+    m, n = A.shape
+    L_hat = np.zeros((m + n))
+    U_hat = np.zeros((m + n))
+
+    ukminus1_LB = u_LB[k-1]
+    ukminus1_UB = u_UB[k-1]
+    vkminus1_LB = v_LB[k-1]
+    vkminus1_UB = v_UB[k-1]
+
+    Ci = np.eye(n)[i]
+    Di = t * A.T[i]
+    minustci = -t * c[i]
+
+    xi = np.hstack([rel_u[k-1], rel_v[k-1]])
+    wi = np.hstack([Ci, Di])
+
+    for j in range(n):
+        if Ci[j] >= 0:
+            L_hat = L_hat.at[j].set(ukminus1_LB[j])
+            U_hat = U_hat.at[j].set(ukminus1_UB[j])
+        else:
+            L_hat = L_hat.at[j].set(ukminus1_UB[j])
+            U_hat = U_hat.at[j].set(ukminus1_LB[j])
+
+    for j in range(m):
+        if Di[j] >= 0:
+            L_hat = L_hat.at[n + j].set(vkminus1_LB[j])
+            U_hat = U_hat.at[n + j].set(vkminus1_UB[j])
+        else:
+            L_hat = L_hat.at[n + j].set(vkminus1_UB[j])
+            U_hat = U_hat.at[n + j].set(vkminus1_LB[j])
+
+    Iint, rhs, lI, h = compute_v(wi, xi, minustci, L_hat, U_hat)
+
+    if Iint is None:
+        return None, None, None, None, None
+
+    lhs = rel_u[k, i]
+
+    # if lhs > rhs + 1e-6:
+    #     log.info(f'found a violated cut at {(k, i)}')
+    #     log.info(f'with lI = {lI}')
+    #     log.info(f'and I = {Iint}')
+    #     log.info(f'h={h}')
+    #     log.info(f'lhs: {lhs}')
+    #     log.info(f'rhs: {rhs}')
+
+    if lhs > rhs + 1e-6:
+        return Iint, lI, h, L_hat, U_hat
+    else:
+        return None, None, None, None, None
