@@ -75,7 +75,7 @@ def test_dr():
     for k in range(1, K+1):
         print(f'-K = {k}-')
         # u[k] = VP.add_iterate(m + n)
-        u[k] = VP.implicit_linear_step(M, z[k-1] - q_param, lhs_mat_factorization=lhs_factored)
+        u[k] = VP.implicit_linear_step(lhs.todense(), z[k-1] - q_param, lhs_mat_factorization=lhs_factored)
         utilde[k] = VP.relu_step(2 * u[k] - z[k-1], proj_ranges=(n, n+m))
         z[k] = z[k-1] + utilde[k] - u[k]
 
@@ -85,6 +85,22 @@ def test_dr():
 
     print(f'opt q_param at last K: {VP.extract_sol(q_param)}')
     print(f'VP resids: {all_res}')
+
+    zk = z0_init
+    q = VP.extract_sol(q_param)
+    PGD_resids = []
+
+    # print('z0_init:', z0_init)
+    for k in range(K):
+        # u = np.linalg.solve(lhs, zk - q)
+        u = spa.linalg.spsolve(lhs, zk - q)
+        utilde = proj(2 * u - zk, n)
+        znew = zk + utilde - u
+        # print('test zk:', znew)
+        PGD_resids.append(np.max(np.abs(znew - zk)))
+        zk = znew
+
+    print('PGD resids with last K:', PGD_resids)
 
 
 def proj(v, n):
