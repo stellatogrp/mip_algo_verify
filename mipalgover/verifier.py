@@ -12,13 +12,11 @@ class Verifier(object):
 
     def __init__(self,
                  num_obbt=3,
-                 postprocess=False,
                  theory_func=None,
                  solver='gurobi',
                  solver_params={}):
 
         self.num_obbt = num_obbt
-        self.postprocess = postprocess
         self.objective = None
         self.theory_func = theory_func
         self.obbt = True
@@ -274,6 +272,23 @@ class Verifier(object):
     def extract_sol(self, iterate):
         return self.canonicalizer.extract_sol(iterate)
 
+    def post_process(self, var_to_bound, var_for_init_bounds, residual_values, return_improv_frac=True):
+        delta_sum = np.sum(residual_values)
+        lower_bounds = self.lower_bounds[var_for_init_bounds]
+        upper_bounds = self.upper_bounds[var_for_init_bounds]
+        new_lower_bounds = lower_bounds - delta_sum
+        new_upper_bounds = upper_bounds + delta_sum
+
+        new_lower_bounds, lb_improv_frac = update_lb(lower_bounds, new_lower_bounds)
+        new_upper_bounds, ub_improv_frac = update_ub(upper_bounds, new_upper_bounds)
+
+        improv_frac = (lb_improv_frac + ub_improv_frac) / 2.
+        self.canonicalizer.post_process(var_to_bound, new_lower_bounds, new_upper_bounds)
+
+        if return_improv_frac:
+            return improv_frac
+
+
 
 def interval_bound_prop(A, l, u):
     # given x in [l, u], give bounds on Ax
@@ -316,7 +331,7 @@ def saturated_linear(x, l, u):
 
 
 def soft_threshold(x, gamma):
-        return np.sign(x) * np.maximum(np.abs(x) - gamma, 0)
+    return np.sign(x) * np.maximum(np.abs(x) - gamma, 0)
 
 
 def update_lb(old_lb, new_lb):

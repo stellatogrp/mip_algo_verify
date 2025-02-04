@@ -56,6 +56,7 @@ def test_partial_nnqp():
         VP.set_infinity_norm_objective(z[k] - z[k-1])
         res = VP.solve(huchette_cuts=True)
         all_res.append(res)
+        VP.post_process(z[k], z[0], all_res)
 
     print(f'opt q_param at last K: {VP.extract_sol(q_param)}')
 
