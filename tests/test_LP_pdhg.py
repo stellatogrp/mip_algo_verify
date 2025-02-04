@@ -21,7 +21,7 @@ def test_pdhg_convergence():
 
     constraints = [A @ x == b, x >= 0]
     prob = cp.Problem(cp.Minimize(c @ x), constraints)
-    res = prob.solve()
+    res = prob.solve(solver=cp.CLARABEL)
     # print('--testing with cvxpy--')
     print('obj:', res)
     # print('x value:', x.value)

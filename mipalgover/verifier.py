@@ -87,6 +87,8 @@ class Verifier(object):
         self.canonicalizer.add_iterate_var(iterate, lb=iterate_lb, ub=iterate_ub)
         self.canonicalizer.add_equality_constraint(lhs_mat @ iterate, rhs_expr)
 
+        self.add_step(step)
+
         return iterate
 
     def relu_step(self, rhs_expr, proj_ranges=None):
@@ -127,6 +129,8 @@ class Verifier(object):
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_relu_constraints(step)
 
+        self.add_step(step)
+
         # if convexification flag
 
         return out_iterate
@@ -164,6 +168,8 @@ class Verifier(object):
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_saturated_linear_constraints(step, out_lb, out_ub)
 
+        self.add_step(step)
+
         return out_iterate
 
     def soft_threshold_step(self, rhs_expr, lambd):
@@ -199,6 +205,8 @@ class Verifier(object):
         # add new iterate and st constraints to canonicalizer
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_soft_threshold_constraints(step, out_lb, out_ub)
+
+        self.add_step(step)
 
         return out_iterate
 
@@ -259,7 +267,8 @@ class Verifier(object):
         self.canonicalizer.set_infinity_norm_objective(expr_list, lb_list, ub_list)
 
     def solve(self, **kwargs):
-        res = self.canonicalizer.solve_model(**kwargs)
+        # print(self.steps)
+        res = self.canonicalizer.solve_model(self.steps, self.lower_bounds, self.upper_bounds, **kwargs)
         return res
 
     def extract_sol(self, iterate):

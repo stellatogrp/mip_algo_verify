@@ -19,7 +19,7 @@ def test_verifier():
     obj = c.T @ x
     constraints = [A @ x == b, x >= 0]
     problem = cp.Problem(cp.Minimize(obj), constraints)
-    res = problem.solve()
+    res = problem.solve(solver=cp.CLARABEL)
     print(f'x_test: {x_test}')
     print(f'optimal obj: {res}')
     print(f'optimal x: {x.value}')

@@ -21,7 +21,7 @@ packages = ["mipalgover"]
 
 [project.optional-dependencies]
 dev = [
-       "gurobipy",
+       "gurobipy>=11.0.0",
        "pytest",
        "pre-commit",
        "ruff",

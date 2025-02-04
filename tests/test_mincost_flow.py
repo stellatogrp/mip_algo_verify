@@ -50,7 +50,7 @@ def test_flow():
         x <= u,
     ]
     prob = cp.Problem(obj, constraints)
-    res = prob.solve()
+    res = prob.solve(solver=cp.CLARABEL)
 
     print(res)
     print(x.value)
@@ -81,7 +81,7 @@ def test_flow():
     constraints = [A_block @ x_tilde == b_tilde, x_tilde >= 0]
 
     prob = cp.Problem(obj, constraints)
-    res2 = prob.solve()
+    res2 = prob.solve(solver=cp.CLARABEL)
     print(res2)
     print(x_tilde.value)
 

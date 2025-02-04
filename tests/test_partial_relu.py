@@ -5,6 +5,7 @@ from mipalgover.verifier import Verifier
 
 np.set_printoptions(precision=5)  # Print few decimal places
 np.set_printoptions(suppress=True)  # Suppress scientific notation
+np.set_printoptions(legacy='1.25')
 
 
 def test_partial_nnqp():
@@ -39,7 +40,7 @@ def test_partial_nnqp():
 
     VP = Verifier()
 
-    q_offset = 0.1
+    q_offset = 1
     q_param = VP.add_param(n, lb=q-q_offset, ub=q+q_offset)
 
     z0 = VP.add_initial_iterate(n, lb=-1, ub=-1)
@@ -53,7 +54,7 @@ def test_partial_nnqp():
         z[k] = VP.relu_step(z[k-1] - t * (P @ z[k-1] + q_param), proj_ranges=proj_ranges)
 
         VP.set_infinity_norm_objective(z[k] - z[k-1])
-        res = VP.solve(full_convexify=True)
+        res = VP.solve(huchette_cuts=True)
         all_res.append(res)
 
     print(f'opt q_param at last K: {VP.extract_sol(q_param)}')
