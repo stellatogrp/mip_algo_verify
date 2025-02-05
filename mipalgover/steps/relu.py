@@ -11,6 +11,7 @@ class ReluStep(Step):
         super().__init__(lhs_expr, rhs_expr)
         self.proj_ranges = proj_ranges
         self._process_proj_ranges()
+        self.idx_with_binary_vars = set([])
 
     def _process_proj_ranges(self):
         nonproj_indices = set(list(range(0, self.rhs_expr.get_output_dim())))

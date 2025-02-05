@@ -51,10 +51,10 @@ def test_ista():
         return 2 * init_C / np.sqrt((k-1) * (k+2))
 
     VP = Verifier(theory_func=theory_func)
-    b_offset = 0.5
+    b_offset = 1.
     b_param = VP.add_param(m, lb=b-b_offset, ub=b+b_offset)
 
-    z0 = VP.add_initial_iterate(n, lb=-1, ub=-1)
+    z0 = VP.add_initial_iterate(n, lb=2, ub=2)
 
     K = 5
     z = [None for _ in range(K + 1)]
@@ -70,14 +70,14 @@ def test_ista():
         VP.theory_bound(k, z[k], z[k-1])
 
         VP.set_infinity_norm_objective(z[k] - z[k-1])
-        res = VP.solve()
+        res = VP.solve(huchette_cuts=True)
         all_res.append(res)
 
     print(f'opt b_param at last K: {VP.extract_sol(b_param)}')
 
     print(f'VP resids: {all_res}')
 
-    zk = -np.ones(n)
+    zk = 2 * np.ones(n)
     b = VP.extract_sol(b_param)
     ISTA_resids = []
 

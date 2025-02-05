@@ -3,7 +3,14 @@ import numpy as np
 import scipy.sparse as spa
 
 from mipalgover.canonicalizers.huchette_cuts.relu import relu_add_conv_cuts, relu_create_new_constr
+from mipalgover.canonicalizers.huchette_cuts.soft_threshold import (
+    st_add_neg_conv_cuts,
+    st_add_pos_conv_cuts,
+    st_create_new_neg_constr,
+    st_create_new_pos_constr,
+)
 from mipalgover.steps.relu import ReluStep
+from mipalgover.steps.soft_threshold import SoftThresholdStep
 
 
 class GurobiCanonicalizer(object):
@@ -100,6 +107,8 @@ class GurobiCanonicalizer(object):
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i]))
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i] - rhs_lb[i] * (1 - out_new_vars[i])))
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_ub[i] * out_new_vars[i]))
+
+                step.idx_with_binary_vars.add(i)
 
         self.step_constr_map[step] = out_constraints
         self.model.update()
@@ -218,6 +227,8 @@ class GurobiCanonicalizer(object):
                 if rhs_lb[i] < -lambd and rhs_ub[i] > lambd:
                     new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
                     new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    step.idx_with_right_binary_vars.add(i)
+                    step.idx_with_left_binary_vars.add(i)
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i] - lambd))
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i] + lambd))
@@ -242,6 +253,7 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(new_w1[i] + new_w2[i] <= 1))
 
                 elif -lambd <= rhs_lb[i] <= lambd and rhs_ub[i] > lambd:
+                    step.idx_with_right_binary_vars.add(i)
                     new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= 0))
@@ -257,6 +269,7 @@ class GurobiCanonicalizer(object):
 
                 elif -lambd <= rhs_ub[i] <= lambd and rhs_lb[i] <= -lambd:
                     new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    step.idx_with_left_binary_vars.add(i)
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= 0))
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= lhs_lb[i] / (rhs_lb[i] - rhs_ub[i]) * (rhs_gp_expr[i] - rhs_ub[i])))
@@ -324,7 +337,6 @@ class GurobiCanonicalizer(object):
             self.model.addConstr(target_gp_expr <= bound_ub + C)
         self.model.update()
 
-
     def post_process(self, target_expr, bound_lb, bound_ub):
         target_gp_expr = self.lin_expr_to_gp_expr(target_expr)
         if target_expr.is_leaf:
@@ -336,13 +348,11 @@ class GurobiCanonicalizer(object):
             self.model.addConstr(target_gp_expr <= bound_ub)
         self.model.update()
 
-
     def equality_constraint(self, lhs_expr, rhs_expr):
         lhs_gp_expr = self.lin_expr_to_gp_expr(lhs_expr)
         rhs_gp_expr = self.lin_expr_to_gp_expr(rhs_expr)
         self.model.addConstr(lhs_gp_expr == rhs_gp_expr)
         self.model.update()
-
 
     def set_zero_objective(self):
         # this function is mostly just for debugging the constraints
@@ -415,11 +425,62 @@ class GurobiCanonicalizer(object):
         for step in steps:
             if isinstance(step, ReluStep):
                 self.relu_huchette_cuts(relaxed_model, step, lower_bounds, upper_bounds, **kwargs)
+            elif isinstance(step, SoftThresholdStep):
+                self.soft_threshold_huchette_cuts(relaxed_model, step, lower_bounds, upper_bounds, **kwargs)
 
         self.model_to_opt.update()
 
     def relu_huchette_cuts(self, relaxed_model, step, lower_bounds, upper_bounds, **kwargs):
         n = step.lhs_expr.get_output_dim()
+        # huchette cuts for w = relu(a^T y)
+
+        w, A, y, l, u, w_var, y_var = self.extract_vecs_for_huchette_cuts(relaxed_model, step, lower_bounds, upper_bounds, **kwargs)
+
+        for i in range(n):
+            if i in step.nonproj_indices:
+                continue
+            if i not in step.idx_with_binary_vars:
+                continue
+            Iint, lI, h, Lhat, Uhat = relu_add_conv_cuts(w[i], A[i, :], y, l, u)
+            if Iint is not None:
+                # print(Iint, lI, h)
+                new_constr = relu_create_new_constr(w_var[i], A[i, :], y_var, Iint, lI, h, Lhat, Uhat)
+                self.model_to_opt.addConstr(new_constr)
+
+    def soft_threshold_huchette_cuts(self, relaxed_model, step, lower_bounds, upper_bounds, **kwargs):
+        n = step.lhs_expr.get_output_dim()
+        lambd = step.lambd
+        # huchette cuts for w = soft_thresh(a^T y, lambd)
+
+        w, A, y, l, u, w_var, y_var = self.extract_vecs_for_huchette_cuts(relaxed_model, step, lower_bounds, upper_bounds, **kwargs)
+
+        for i in range(n):
+            if i in step.idx_with_right_binary_vars and i not in step.idx_with_left_binary_vars:
+                Iint, lI, h, Lhat, Uhat = st_add_pos_conv_cuts(w[i], A[i, :], y, lambd, l, u)
+                if Iint is not None:
+                    new_constr = st_create_new_pos_constr(w_var[i], A[i, :], y_var, lambd, Iint, lI, h, Lhat, Uhat)
+                    self.model_to_opt.addConstr(new_constr)
+
+            if i in step.idx_with_left_binary_vars and i not in step.idx_with_right_binary_vars:
+                Iint, uI, h, Lhat, Uhat = st_add_neg_conv_cuts(w[i], A[i, :], y, lambd, l, u)
+                if Iint is not None:
+                    new_constr = st_create_new_neg_constr(w_var[i], A[i, :], y_var, lambd, Iint, uI, h, Lhat, Uhat)
+                    self.model_to_opt.addConstr(new_constr)
+
+            if i in step.idx_with_right_binary_vars and i in step.idx_with_left_binary_vars:
+                if w[i] > 0:
+                    Iint, lI, h, Lhat, Uhat = st_add_pos_conv_cuts(w[i], A[i, :], y, lambd, l, u)
+                    if Iint is not None:
+                        new_constr = st_create_new_pos_constr(w_var[i], A[i, :], y_var, lambd, Iint, lI, h, Lhat, Uhat)
+                        self.model_to_opt.addConstr(new_constr)
+                if w[i] < 0:
+                    Iint, uI, h, Lhat, Uhat = st_add_neg_conv_cuts(w[i], A[i, :], y, lambd, l, u)
+                    if Iint is not None:
+                        new_constr = st_create_new_neg_constr(w_var[i], A[i, :], y_var, lambd, Iint, uI, h, Lhat, Uhat)
+                        self.model_to_opt.addConstr(new_constr)
+
+    def extract_vecs_for_huchette_cuts(self, relaxed_model, step, lower_bounds, upper_bounds, **kwargs):
+        # n = step.lhs_expr.get_output_dim()
         # huchette cuts for w = relu(a^T y)
 
         w_var = self.leaf_expr_to_gp_var(step.lhs_expr)
@@ -448,15 +509,7 @@ class GurobiCanonicalizer(object):
         l = np.hstack(l)
         u = np.hstack(u)
 
-        for i in range(n):
-            if i in step.nonproj_indices:
-                continue
-            Iint, lI, h, Lhat, Uhat = relu_add_conv_cuts(w[i], A[i, :], y, l, u)
-            if Iint is not None:
-                print(Iint, lI, h)
-                new_constr = relu_create_new_constr(w_var[i], A[i, :], y_var, Iint, lI, h, Lhat, Uhat)
-                self.model_to_opt.addConstr(new_constr)
-
+        return w, A, y, l, u, w_var, y_var
 
     def extract_sol(self, iterate):
         out = 0
