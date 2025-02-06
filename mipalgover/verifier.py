@@ -269,6 +269,9 @@ class Verifier(object):
         res = self.canonicalizer.solve_model(self.steps, self.lower_bounds, self.upper_bounds, **kwargs)
         return res
 
+    def extract_solver_data(self):
+        return self.canonicalizer.get_solve_data()
+
     def extract_sol(self, iterate):
         return self.canonicalizer.extract_sol(iterate)
 

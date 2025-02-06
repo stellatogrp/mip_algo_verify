@@ -533,3 +533,12 @@ class GurobiCanonicalizer(object):
             # print(new_model.getVarByName(var[i].item().VarName))
             out.append(new_model.getVarByName(var[i].item().VarName))
         return gp.MVar.fromlist(out)
+
+    def get_solve_data(self):
+        model = self.model_to_opt
+        return {
+            'objVal': model.objVal,
+            'objBound': model.objBound,
+            'MIPGap': model.MIPGap,
+            'Runtime': model.Runtime,
+        }
