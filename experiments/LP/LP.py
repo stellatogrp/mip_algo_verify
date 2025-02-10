@@ -172,6 +172,7 @@ def LP_run(cfg, A, c, t, u0, v0):
     v[0] = v0
 
     Deltas = []
+    rel_LP_sols = []
     Delta_bounds = []
     Delta_gaps = []
     times = []
@@ -187,25 +188,27 @@ def LP_run(cfg, A, c, t, u0, v0):
 
         VP.set_infinity_norm_objective([u[k] - u[k-1], v[k] - v[k-1]])
 
-        VP.solve(huchette_cuts=cfg.huchette_cuts)
+        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
 
         data = VP.extract_solver_data()
         print(data)
 
         Deltas.append(data['objVal'])
+        rel_LP_sols.append(data['rel_LP_sol'])
         Delta_bounds.append(data['objBound'])
         Delta_gaps.append(data['MIPGap'])
         times.append(data['Runtime'])
 
-        plot_data(cfg, n, m, max_sample_resids, Deltas, Delta_bounds, Delta_gaps, times)
+        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times)
 
         print(f'samples: {max_sample_resids}')
+        print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
         print(f'VP residuals: {jnp.array(Deltas)}')
         print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         print(f'times:{jnp.array(times)}')
 
 
-def plot_data(cfg, n, m, max_sample_resids, Deltas, Delta_bounds, Delta_gaps, solvetimes):
+def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     if cfg.momentum:
         df.to_csv(cfg.momentum_resid_fname, index=False, header=False)
@@ -231,6 +234,7 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, Delta_bounds, Delta_gaps, so
     # plotting resids so far
     fig, ax = plt.subplots()
     ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+    ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
     ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
     ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
 

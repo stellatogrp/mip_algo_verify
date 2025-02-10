@@ -411,6 +411,15 @@ class GurobiCanonicalizer(object):
         if 'huchette_cuts' in kwargs:
             if kwargs['huchette_cuts']:
                 self.add_huchette_cuts(steps, lower_bounds, upper_bounds, **kwargs)
+
+        if 'include_rel_LP_sol' in kwargs:
+            if kwargs['include_rel_LP_sol']:
+                rel_model = self.model_to_opt.relax()
+                rel_model.optimize()
+                self.rel_LP_sol = rel_model.objVal
+                # print('relaxed LP sol:', self.rel_LP_sol)
+        else:
+            self.rel_LP_sol = None
         self.model_to_opt.optimize()
         return self.model_to_opt.objVal
 
@@ -541,4 +550,5 @@ class GurobiCanonicalizer(object):
             'objBound': model.objBound,
             'MIPGap': model.MIPGap,
             'Runtime': model.Runtime,
+            'rel_LP_sol': self.rel_LP_sol,
         }

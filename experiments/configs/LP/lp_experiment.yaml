@@ -3,7 +3,7 @@ n: 14
 rng_seed: 0
 stepsize: .1
 rel_stepsize: 0.5
-momentum: True
+momentum: False
 beta_func: nesterov
 
 u0:
@@ -65,7 +65,7 @@ obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
   default: 1e-3
 warmstart: True
-huchette_cuts: False
+huchette_cuts: True
 
 callback: True
 exact_conv_relax:
