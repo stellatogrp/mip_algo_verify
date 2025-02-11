@@ -102,7 +102,10 @@ class GurobiCanonicalizer(object):
             elif rhs_lb[i] > 0:
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == rhs_gp_expr[i]))
             else:
-                out_new_vars[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                if step.relax_binary_vars:
+                    out_new_vars[i] = self.model.addVar(lb=0., ub=1.)
+                else:
+                    out_new_vars[i] = self.model.addVar(vtype=gp.GRB.BINARY)
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_ub[i] / (rhs_ub[i] - rhs_lb[i]) * (rhs_gp_expr[i] - rhs_lb[i])))
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i]))
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i] - rhs_lb[i] * (1 - out_new_vars[i])))

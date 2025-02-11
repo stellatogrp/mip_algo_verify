@@ -3,11 +3,12 @@ import numpy as np
 
 class Step(object):
 
-    def __init__(self, lhs_expr, rhs_expr):
+    def __init__(self, lhs_expr, rhs_expr, relax_binary_vars=False):
         self.lhs_expr = lhs_expr
         self.rhs_expr = rhs_expr
         self.rhs_lb = None
         self.rhs_ub = None
+        self.relax_binary_vars = relax_binary_vars
 
     def update_rhs_lb(self, new_rhs_lb):
         if self.rhs_lb is None:

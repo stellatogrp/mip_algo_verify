@@ -24,8 +24,8 @@ problem_type: 'flow'
 # problem_type: 'random'
 
 flow:
-  n_supply: 10
-  n_demand: 5
+  n_supply: 15
+  n_demand: 10
   p: 0.5
   seed: 2
   c:
@@ -59,7 +59,7 @@ timelimit: 7200
 mipfocus: 0
 
 K_min: 1
-K_max: 20
+K_max: 25
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)

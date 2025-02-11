@@ -89,14 +89,14 @@ class Verifier(object):
 
         return iterate
 
-    def relu_step(self, rhs_expr, proj_ranges=None):
+    def relu_step(self, rhs_expr, proj_ranges=None, relax_binary_vars=False):
         if proj_ranges is None:
             proj_ranges = [(0, rhs_expr.get_output_dim())]
         else:
             proj_ranges = list_upcast(proj_ranges)
 
         out_iterate = Vector(rhs_expr.get_output_dim())
-        step = ReluStep(out_iterate, rhs_expr, proj_ranges=proj_ranges)
+        step = ReluStep(out_iterate, rhs_expr, proj_ranges=proj_ranges, relax_binary_vars=relax_binary_vars)
 
         rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
         step.update_rhs_lb(rhs_lb)

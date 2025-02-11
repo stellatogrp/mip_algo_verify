@@ -171,14 +171,19 @@ def LP_run(cfg, A, c, t, u0, v0):
     v = [None for _ in range(K+1)]
     v[0] = v0
 
+    def relax_binary_vars_func(k):
+        return k <= 15
+
     Deltas = []
     rel_LP_sols = []
     Delta_bounds = []
     Delta_gaps = []
     times = []
+
     for k in range(1, K+1):
         log.info(f'Solving VP at k={k}')
-        u[k] = VP.relu_step(u[k-1] - t * (c_param - A.T @ v[k-1]))
+
+        u[k] = VP.relu_step(u[k-1] - t * (c_param - A.T @ v[k-1]), relax_binary_vars=False)
 
         if momentum:
             yk = u[k] + beta_func(k-1) * (u[k] - u[k-1])
