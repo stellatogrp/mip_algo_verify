@@ -1,0 +1,72 @@
+A_rng_seed: 0
+# lambd: 1e-2
+# lambd: adaptive
+lambd:
+  val: 0.01  # either a number or 'adaptive'
+  scalar: 0.1  # if val == 'adaptive', then lambda = scalar * infty norm of A.T @ x for x the center of param set
+t: 0.04
+t_rel: 0.5
+m: 25
+n: 50
+mu: 1
+L: 5
+
+x_star:
+  std: 0.2
+  rng_seed: 1
+  nonzero_prob: 0.1
+  num: 100
+  epsilon_std: 1e-2
+  A_mask_prob: 0.2
+
+# problem_type: 'random'
+problem_type: 'sparse_coding'
+
+z0:
+  type: lstsq # 'lstsq' or 'zero'
+  # type: zero
+
+x:
+  seed: 1
+  type: box
+  l: 10.25
+  u: 10.5
+
+K_min: 1
+K_max: 4
+relax_cutoff: 5
+pnorm: inf
+obj_scaling:
+  val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
+  default: 1e-3
+warmstart: False
+
+build_from_scratch: False
+theory_bounds: False
+postprocessing: False
+opt_based_tightening: False
+num_obbt_iter: 5
+
+mipgap: 0.05
+mipfocus: 3
+timelimit: 7200
+huchette_cuts: False
+
+C_norm: 2
+star_bound_M: 1e2
+init_dist_M: 100
+
+exact_conv_relax:
+  use_in_l1_rel: False
+
+samples:
+  z_seed_offset: 100
+  x_seed_offset: 101
+  N: 1000
+  init_dist_N: 100
+  out_fname: sample_resids.csv
+  max_out_fname: max_sample_resids.csv
+
+pep:
+  resid_fname: pep_resids.csv
+  time_fname: pep_times.csv

@@ -3,9 +3,15 @@ import os
 import sys
 
 import hydra
+import ISTA.ISTA as ISTA
 import LP.LP as LP
 
 log = logging.getLogger(__name__)
+
+
+@hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
+def main_experiment_ista(cfg):
+    ISTA.run(cfg)
 
 
 @hydra.main(version_base='1.2', config_path='configs/LP', config_name='lp_experiment.yaml')
@@ -30,7 +36,7 @@ base_dir_map = {
 func_driver_map = {
     'LP': main_experiment_lp,
     # 'NNQP': main_experiment_nnqp,
-    # 'ISTA': main_experiment_ista,
+    'ISTA': main_experiment_ista,
     # 'ISTA_scratch': main_experiment_ista_scratch,
     # 'FISTA': main_experiment_fista,
     # 'Portfolio': main_experiment_portfolio,

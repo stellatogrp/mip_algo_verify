@@ -170,9 +170,9 @@ class Verifier(object):
 
         return out_iterate
 
-    def soft_threshold_step(self, rhs_expr, lambd):
+    def soft_threshold_step(self, rhs_expr, lambd, relax_binary_vars=False):
         out_iterate = Vector(rhs_expr.get_output_dim())
-        step = SoftThresholdStep(out_iterate, rhs_expr, lambd)
+        step = SoftThresholdStep(out_iterate, rhs_expr, lambd, relax_binary_vars=relax_binary_vars)
 
         rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
         step.update_rhs_lb(rhs_lb)

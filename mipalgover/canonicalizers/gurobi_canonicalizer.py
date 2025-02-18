@@ -141,8 +141,12 @@ class GurobiCanonicalizer(object):
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == rhs_gp_expr[i]))
             else:
                 if rhs_lb[i] < l[i] and rhs_ub[i] > u[i]:
-                    new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
-                    new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    if step.relax_binary_vars:
+                        new_w1[i] = self.model.addVar(lb=0., ub=1.)
+                        new_w2[i] = self.model.addVar(lb=0., ub=1.)
+                    else:
+                        new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                        new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
 
                     # following two are redundant due to preprocessing bounds on the left hand side iterate
                     # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= u[i]))
@@ -165,7 +169,10 @@ class GurobiCanonicalizer(object):
 
                     out_constraints.append(self.model.addConstr(new_w1[i] + new_w2[i] <= 1))
                 elif rhs_lb[i] < l[i] and rhs_ub[i] < u[i]:
-                    new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    if step.relax_binary_vars:
+                        new_w2[i] = self.model.addVar(lb=0., ub=1.)
+                    else:
+                        new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
                     # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= l[i]))
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i]))
 
@@ -181,7 +188,10 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(rhs_gp_expr[i] <= l[i] + (rhs_ub[i] - l[i]) * (1 - new_w2[i])))
 
                 elif rhs_lb[i] > l[i] and rhs_ub[i] > u[i]:
-                    new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    if step.relax_binary_vars:
+                        new_w1[i] = self.model.addVar(lb=0., ub=1.)
+                    else:
+                        new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
 
                     # out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= u[i]))
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= rhs_gp_expr[i]))
@@ -228,8 +238,12 @@ class GurobiCanonicalizer(object):
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == 0))
             else:
                 if rhs_lb[i] < -lambd and rhs_ub[i] > lambd:
-                    new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
-                    new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    if step.relax_binary_vars:
+                        new_w1[i] = self.model.addVar(lb=0., ub=1.)
+                        new_w2[i] = self.model.addVar(lb=0., ub=1.)
+                    else:
+                        new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                        new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
                     step.idx_with_right_binary_vars.add(i)
                     step.idx_with_left_binary_vars.add(i)
 
@@ -257,7 +271,11 @@ class GurobiCanonicalizer(object):
 
                 elif -lambd <= rhs_lb[i] <= lambd and rhs_ub[i] > lambd:
                     step.idx_with_right_binary_vars.add(i)
-                    new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+
+                    if step.relax_binary_vars:
+                        new_w1[i] = self.model.addVar(lb=0., ub=1.)
+                    else:
+                        new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= 0))
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= lhs_ub[i] / (rhs_ub[i] - rhs_lb[i]) * (rhs_gp_expr[i] - rhs_lb[i])))
@@ -271,7 +289,10 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= lhs_ub[i] * new_w1[i]))
 
                 elif -lambd <= rhs_ub[i] <= lambd and rhs_lb[i] <= -lambd:
-                    new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
+                    if step.relax_binary_vars:
+                        new_w2[i] = self.model.addVar(lb=0., ub=1.)
+                    else:
+                        new_w2[i] = self.model.addVar(vtype=gp.GRB.BINARY)
                     step.idx_with_left_binary_vars.add(i)
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= 0))
@@ -326,7 +347,6 @@ class GurobiCanonicalizer(object):
 
         return lb_out, ub_out
 
-
     def add_theory_cut(self, C, target_expr, bound_lb, bound_ub):
         if C == np.inf:
             return
@@ -365,6 +385,8 @@ class GurobiCanonicalizer(object):
         self.model_to_opt.update()
 
     def set_infinity_norm_objective(self, expr_list, lb_list, ub_list):
+        if self.model_to_opt is not None:
+            self.model_to_opt.dispose()
         self.model_to_opt = self.model.copy()
 
         all_lb = np.hstack(lb_list)
