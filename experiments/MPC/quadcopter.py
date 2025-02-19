@@ -104,7 +104,7 @@ class Quadcopter(object):
         self.q = q
         self.A = A
         self.l = l
-        self.u = u 
+        self.u = u
 
 
 def main():
@@ -202,7 +202,7 @@ def main():
 
         xk = xkplus1
         vk = vkplus1
-    
+
     print(xk)
     print('xv resids:', xv_fp_resids)
     print('xv l2 resids:', xv_l2_fp_resids)
@@ -222,7 +222,7 @@ def main():
 
 def proj(v, l, u):
     return np.minimum(np.maximum(v, l), u)
-    
+
 
 if __name__ == '__main__':
     main()
