@@ -62,9 +62,7 @@ def test_dr():
     q_param = VP.add_param(n + m, lb=q_l, ub=q_u)
 
     z0_init = np.zeros(n + m)
-
     z0 = VP.add_initial_iterate(m + n, lb=z0_init, ub=z0_init)
-
     K = 5
     u = [None for _ in range(K+1)]
     utilde = [None for _ in range(K+1)]
@@ -72,10 +70,12 @@ def test_dr():
     z[0] = z0
 
     all_res = []
+
+    # VP = Verifier()
     for k in range(1, K+1):
         print(f'-K = {k}-')
-        # u[k] = VP.add_iterate(m + n)
-        u[k] = VP.implicit_linear_step(lhs.todense(), z[k-1] - q_param, lhs_mat_factorization=lhs_factored)
+        u[k] = VP.implicit_linear_step(lhs.todense(), z[k-1] - q_param,
+            lhs_mat_factorization=lhs_factored)
         utilde[k] = VP.relu_step(2 * u[k] - z[k-1], proj_ranges=(n, n+m))
         z[k] = z[k-1] + utilde[k] - u[k]
 

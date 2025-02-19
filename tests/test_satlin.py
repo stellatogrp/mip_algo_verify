@@ -68,14 +68,14 @@ def test_satlin():
     print(f'opt q_param at last K: {VP.extract_sol(q_param)}')
     print(f'VP resids: {all_res}')
 
-    # print('extracting values from VP:')
-    # for k in range(K+1):
-    #     print(f'-K={k}-')
-    #     print(VP.extract_sol(z[k]))
+    print('extracting values from VP:')
+    for k in range(K+1):
+        print(f'-K={k}-')
+        print(VP.extract_sol(z[k]))
 
-    # z_test = np.array([-0.91651, 1, 0])
-    # print('test grad step from K-1:', z_test - t * (P @ z_test + VP.extract_sol(q_param)))
-    # print('bounds:', VP.lower_bounds[VP.iterates[-1]], VP.upper_bounds[VP.iterates[-1]])
+    z_test = np.array([-0.91651, 1, 0])
+    print('test grad step from K-1:', z_test - t * (P @ z_test + VP.extract_sol(q_param)))
+    print('bounds:', VP.lower_bounds[VP.iterates[-1]], VP.upper_bounds[VP.iterates[-1]])
 
     zk = z0_init
     q = VP.extract_sol(q_param)
