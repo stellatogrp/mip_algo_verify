@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 
 from mipalgover.canonicalizers.gurobi_canonicalizer import GurobiCanonicalizer
@@ -6,6 +8,8 @@ from mipalgover.steps.relu import ReluStep
 from mipalgover.steps.saturated_linear import SaturatedLinearStep
 from mipalgover.steps.soft_threshold import SoftThresholdStep
 from mipalgover.vector import Vector
+
+log = logging.getLogger(__name__)
 
 
 class Verifier(object):
@@ -190,6 +194,18 @@ class Verifier(object):
             st_obbt_lb = soft_threshold(obbt_lb, lambd)
             st_obbt_ub = soft_threshold(obbt_ub, lambd)
 
+            log.info('lower bounds of rhs with just propagation:')
+            log.info(st_rhs_lb)
+            log.info('lower bounds of rhs before and after:')
+            log.info(obbt_lb)
+            log.info(st_obbt_lb)
+
+            log.info('upper bounds of rhs with just propagation:')
+            log.info(st_rhs_ub)
+            log.info('upper bounds of rhs before and after:')
+            log.info(obbt_ub)
+            log.info(st_obbt_ub)
+
             out_lb = st_obbt_lb
             out_ub = st_obbt_ub
         else:
@@ -274,6 +290,12 @@ class Verifier(object):
 
     def extract_sol(self, iterate):
         return self.canonicalizer.extract_sol(iterate)
+
+    def extract_bounds(self, iterate):
+        if iterate.is_leaf:
+            return self.lower_bounds[iterate], self.upper_bounds[iterate]
+        else:
+            raise NotImplementedError
 
     def post_process(self, var_to_bound, var_for_init_bounds, residual_values, return_improv_frac=True):
         delta_sum = np.sum(residual_values)

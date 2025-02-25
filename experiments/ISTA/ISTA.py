@@ -34,12 +34,16 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
     K_max = cfg.K_max
 
-    max_sample_resids = samples(cfg, A, lambd, t, c_z, x_l, x_u)
+    max_sample_resids, z_samples, x_samples, max_idx = samples(cfg, A, lambd, t, c_z, x_l, x_u)
+
+    log.info(max_idx)
     log.info(max_sample_resids)
 
     gurobi_params = {
         'TimeLimit': cfg.timelimit,
         'MIPGap': cfg.mipgap,
+        # 'OutputFlag': False,
+        'NumericFocus': 3,
     }
 
     def theory_func(k):
@@ -70,7 +74,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         # theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
         VP.set_infinity_norm_objective(z[k] - z[k-1])
-        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
+        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=False)
 
         data = VP.extract_solver_data()
         print(data)
@@ -90,6 +94,15 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         print(f'times:{jnp.array(times)}')
         # print(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
+
+        # debug(k, At, Bt, lambda_t, c_z, VP, z, x_param, data['objVal'])
+        debug_sample_max(k, At, Bt, lambda_t, VP, z[:k+1], z_samples, x_samples, max_idx, x_l, x_u)
+        # log.info(f'c_z: {c_z}')
+        # z0_l, z0_u = VP.extract_bounds(z0)
+        # log.info(z0_l)
+        # log.info(z0_u)
+        # log.info(VP.extract_bounds(z[0]))
+        # exit(0)
 
     # x = VP.extract_sol(x_param)
     # log.info(f'testing at K={cfg.K_max}')
@@ -165,6 +178,67 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, D
     plt.close()
 
 
+def debug(K, At, Bt, lambda_t, c_z, VP, zk_vals, x_param, obj):
+    log.info(f'----DEBUG at K={K}')
+    x_test = VP.extract_sol(x_param)
+    log.info(f'VP x: {x_test}')
+    log.info(f'c_z {c_z}')
+    log.info(f'obj: {obj}')
+
+    zk = np.array(c_z)
+    for i in range(1, K+1):
+
+        zk_new = soft_threshold(At @ zk + Bt @ x_test, lambda_t)
+
+        vp_zk = VP.extract_sol(zk_vals[i])
+        vp_zkminus1 = VP.extract_sol(zk_vals[i-1])
+        vp_val = np.max(np.abs(vp_zk - vp_zkminus1))
+        log.info(f'VP {i}: {vp_val} {vp_zk}')
+        log.info(f'direct alg: {zk_new}')
+        log.info(f'VP alg diff: {vp_zk - zk_new}')
+
+        zk = zk_new
+
+
+def debug_sample_max(K, At, Bt, lambda_t, VP, zk_vars, z_samples, x_samples, max_idx, x_l, x_u):
+    log.info(f'----DEBUG SAMPLE MAX at K={K}----')
+    K_idx = max_idx[K-1]
+    z_samp = z_samples[K_idx]
+    x_samp = x_samples[K_idx]
+
+    assert np.all(x_l <= x_samp)
+    assert np.all(x_samp <= x_u)
+
+    test_zs = [z_samp]
+    zk = z_samp
+    for _ in range(K):
+        zk = soft_threshold(At @ zk + Bt @ x_samp, lambda_t)
+        test_zs.append(zk)
+    log.info(f'test zs: {test_zs}')
+    for k in range(K+1):
+        log.info(f'k={k}')
+        curr_z = test_zs[k]
+        log.info(f'zk from sample: {curr_z}')
+        zk_l, zk_u = VP.extract_bounds(zk_vars[k])
+        log.info(f'zk_l: {zk_l}')
+        log.info(f'zk - lower: {curr_z - zk_l}')
+        log.info(f'zk_u: {zk_u}')
+        log.info(f'upper - zk: {zk_u - curr_z}')
+    log.info(f'sample max: {np.max(np.abs(test_zs[-1] - test_zs[-2]))}')
+    zK_l, zK_u = VP.extract_bounds(zk_vars[-1])
+    zKminus1_l, zKminus1_u = VP.extract_bounds(zk_vars[-2])
+    r_u = zK_u - zKminus1_l
+    r_l = zK_l - zKminus1_u
+    r_samp = test_zs[-1] - test_zs[-2]
+    log.info(f'r_samp: {r_samp}')
+    log.info(f'r_u - r_samp: {r_u - r_samp}')
+    log.info(f'r_samp - r_l: {r_samp - r_l}')
+
+    zK_VP = VP.extract_sol(zk_vars[-1])
+    zKminus1_VP = VP.extract_sol(zk_vars[-2])
+    log.info(f'r VP: {zK_VP - zKminus1_VP}')
+
+
 def soft_threshold(x, gamma):
     return jnp.sign(x) * jax.nn.relu(jnp.abs(x) - gamma)
 
@@ -222,12 +296,12 @@ def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     _, sample_resids = jax.vmap(ista_resids)(sample_idx)
     log.info(sample_resids)
     max_sample_resids = jnp.max(sample_resids, axis=0)
-    log.info(max_sample_resids)
+    max_idx = jnp.argmax(sample_resids, axis=0)
 
     df = pd.DataFrame(sample_resids[:, 1:])  # remove the first column of zeros
     df.to_csv(cfg.samples.out_fname, index=False, header=False)
 
-    return max_sample_resids[1:]
+    return max_sample_resids[1:], z_samples, x_samples, max_idx[1:]
 
 
 def samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u):

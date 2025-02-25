@@ -921,7 +921,7 @@ def sparse_coding_b_set(cfg, A):
     key = jax.random.PRNGKey(cfg.x_star.rng_seed)
 
     key, subkey = jax.random.split(key)
-    x_star_set = jax.random.normal(subkey, shape=(n, cfg.x_star.num))
+    x_star_set = cfg.x_star.std * jax.random.normal(subkey, shape=(n, cfg.x_star.num))
 
     key, subkey = jax.random.split(key)
     x_star_mask = jax.random.bernoulli(subkey, p=cfg.x_star.nonzero_prob, shape=(n, cfg.x_star.num))

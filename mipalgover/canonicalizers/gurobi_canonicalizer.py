@@ -1,3 +1,5 @@
+import logging
+
 import gurobipy as gp
 import numpy as np
 import scipy.sparse as spa
@@ -11,6 +13,8 @@ from mipalgover.canonicalizers.huchette_cuts.soft_threshold import (
 )
 from mipalgover.steps.relu import ReluStep
 from mipalgover.steps.soft_threshold import SoftThresholdStep
+
+log = logging.getLogger(__name__)
 
 
 class GurobiCanonicalizer(object):
@@ -229,15 +233,20 @@ class GurobiCanonicalizer(object):
         new_w1 = {}
         new_w2 = {}
 
+        log.info('rhs bounds')
+        log.info(rhs_lb)
+        log.info(rhs_ub)
+
         for i in range(n):
             if rhs_lb[i] >= lambd:
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == rhs_gp_expr[i] - lambd))
             elif rhs_ub[i] <= -lambd:
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == rhs_gp_expr[i] + lambd))
             elif rhs_lb[i] >= -lambd and rhs_ub[i] <= lambd:
-                out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == 0))
+                out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == 0.0))
             else:
                 if rhs_lb[i] < -lambd and rhs_ub[i] > lambd:
+                    log.info(f'double side: {i}')
                     if step.relax_binary_vars:
                         new_w1[i] = self.model.addVar(lb=0., ub=1.)
                         new_w2[i] = self.model.addVar(lb=0., ub=1.)
@@ -270,6 +279,7 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(new_w1[i] + new_w2[i] <= 1))
 
                 elif -lambd <= rhs_lb[i] <= lambd and rhs_ub[i] > lambd:
+                    log.info(f'right side only: {i}')
                     step.idx_with_right_binary_vars.add(i)
 
                     if step.relax_binary_vars:
@@ -289,6 +299,7 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= lhs_ub[i] * new_w1[i]))
 
                 elif -lambd <= rhs_ub[i] <= lambd and rhs_lb[i] <= -lambd:
+                    log.info(f'left side only: {i}')
                     if step.relax_binary_vars:
                         new_w2[i] = self.model.addVar(lb=0., ub=1.)
                     else:
@@ -321,6 +332,19 @@ class GurobiCanonicalizer(object):
         ub_out = np.zeros(n)
 
         gp_expr = self.lin_expr_to_gp_expr(linexpr)
+        log.info('trying outside of loop')
+        self.model.setObjective(gp_expr[39], 1)
+        self.model.optimize()
+
+        log.info(f'full model status: {self.model.status}')
+        obbt_model = self.model.relax()
+        obbt_model.Params.OutputFlag = 0
+        obbt_model.update()
+        obbt_model.optimize()
+        log.info(f'obbt model status: {obbt_model.status}')
+        if obbt_model.status == 3:
+            obbt_model.computeIIS()
+
 
         for sense in [gp.GRB.MINIMIZE, gp.GRB.MAXIMIZE]:
             for i in range(n):
@@ -333,7 +357,8 @@ class GurobiCanonicalizer(object):
                 obbt_model.optimize()
 
                 if obbt_model.status != gp.GRB.OPTIMAL:
-                    print('bound tighting failed, GRB model status:', obbt_model.status)
+                    log.info(f'bound tighting failed, GRB model status: {obbt_model.status}')
+                    log.info(f'i = {i}, sense={sense}')
                     exit(0)
                     return None
 
@@ -344,6 +369,8 @@ class GurobiCanonicalizer(object):
 
         # reset objective
         self.model.setObjective(0)
+
+        assert np.all(lb_out <= ub_out)
 
         return lb_out, ub_out
 
@@ -385,6 +412,7 @@ class GurobiCanonicalizer(object):
         self.model_to_opt.update()
 
     def set_infinity_norm_objective(self, expr_list, lb_list, ub_list):
+        self.model.update()
         if self.model_to_opt is not None:
             self.model_to_opt.dispose()
         self.model_to_opt = self.model.copy()
@@ -443,6 +471,8 @@ class GurobiCanonicalizer(object):
                 rel_model.optimize()
                 self.rel_LP_sol = rel_model.objVal
                 # print('relaxed LP sol:', self.rel_LP_sol)
+            else:
+                self.rel_LP_sol = None
         else:
             self.rel_LP_sol = None
         self.model_to_opt.optimize()
