@@ -194,17 +194,17 @@ class Verifier(object):
             st_obbt_lb = soft_threshold(obbt_lb, lambd)
             st_obbt_ub = soft_threshold(obbt_ub, lambd)
 
-            log.info('lower bounds of rhs with just propagation:')
-            log.info(st_rhs_lb)
-            log.info('lower bounds of rhs before and after:')
-            log.info(obbt_lb)
-            log.info(st_obbt_lb)
+            # log.info('lower bounds of rhs with just propagation:')
+            # log.info(st_rhs_lb)
+            # log.info('lower bounds of rhs before and after:')
+            # log.info(obbt_lb)
+            # log.info(st_obbt_lb)
 
-            log.info('upper bounds of rhs with just propagation:')
-            log.info(st_rhs_ub)
-            log.info('upper bounds of rhs before and after:')
-            log.info(obbt_ub)
-            log.info(st_obbt_ub)
+            # log.info('upper bounds of rhs with just propagation:')
+            # log.info(st_rhs_ub)
+            # log.info('upper bounds of rhs before and after:')
+            # log.info(obbt_ub)
+            # log.info(st_obbt_ub)
 
             out_lb = st_obbt_lb
             out_ub = st_obbt_ub

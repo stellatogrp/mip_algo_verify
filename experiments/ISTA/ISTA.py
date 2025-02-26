@@ -43,7 +43,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         'TimeLimit': cfg.timelimit,
         'MIPGap': cfg.mipgap,
         # 'OutputFlag': False,
-        'NumericFocus': 3,
+        # 'NumericFocus': 3,
     }
 
     def theory_func(k):

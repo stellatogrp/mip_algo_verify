@@ -2,12 +2,12 @@ A_rng_seed: 0
 # lambd: 1e-2
 # lambd: adaptive
 lambd:
-  val: 0.01  # either a number or 'adaptive'
+  val: 0.1  # either a number or 'adaptive'
   scalar: 0.1  # if val == 'adaptive', then lambda = scalar * infty norm of A.T @ x for x the center of param set
 t: 0.04
 t_rel: 0.5
-m: 25
-n: 50
+m: 20
+n: 30
 mu: 1
 L: 5
 
@@ -33,8 +33,8 @@ x:
   u: 10.5
 
 K_min: 1
-K_max: 6
-relax_cutoff: 10
+K_max: 15
+relax_cutoff: 8
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)

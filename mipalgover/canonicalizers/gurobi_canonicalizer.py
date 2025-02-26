@@ -233,10 +233,6 @@ class GurobiCanonicalizer(object):
         new_w1 = {}
         new_w2 = {}
 
-        log.info('rhs bounds')
-        log.info(rhs_lb)
-        log.info(rhs_ub)
-
         for i in range(n):
             if rhs_lb[i] >= lambd:
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == rhs_gp_expr[i] - lambd))
@@ -246,7 +242,7 @@ class GurobiCanonicalizer(object):
                 out_constraints.append(self.model.addConstr(lhs_gp_expr[i] == 0.0))
             else:
                 if rhs_lb[i] < -lambd and rhs_ub[i] > lambd:
-                    log.info(f'double side: {i}')
+                    # log.info(f'double side: {i}')
                     if step.relax_binary_vars:
                         new_w1[i] = self.model.addVar(lb=0., ub=1.)
                         new_w2[i] = self.model.addVar(lb=0., ub=1.)
@@ -279,7 +275,7 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(new_w1[i] + new_w2[i] <= 1))
 
                 elif -lambd <= rhs_lb[i] <= lambd and rhs_ub[i] > lambd:
-                    log.info(f'right side only: {i}')
+                    # log.info(f'right side only: {i}')
                     step.idx_with_right_binary_vars.add(i)
 
                     if step.relax_binary_vars:
@@ -299,7 +295,7 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] <= lhs_ub[i] * new_w1[i]))
 
                 elif -lambd <= rhs_ub[i] <= lambd and rhs_lb[i] <= -lambd:
-                    log.info(f'left side only: {i}')
+                    # log.info(f'left side only: {i}')
                     if step.relax_binary_vars:
                         new_w2[i] = self.model.addVar(lb=0., ub=1.)
                     else:
@@ -315,7 +311,7 @@ class GurobiCanonicalizer(object):
                     out_constraints.append(self.model.addConstr(rhs_gp_expr[i] >= -lambd + (rhs_lb[i] + lambd) * new_w2[i]))
 
                     out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= rhs_gp_expr[i] + lambd + (-2 * lambd)*(1 - new_w2[i])))
-                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= lhs_ub[i] * new_w2[i]))
+                    out_constraints.append(self.model.addConstr(lhs_gp_expr[i] >= lhs_lb[i] * new_w2[i]))
 
                 else:
                     raise RuntimeError('Unreachable code')
@@ -332,18 +328,19 @@ class GurobiCanonicalizer(object):
         ub_out = np.zeros(n)
 
         gp_expr = self.lin_expr_to_gp_expr(linexpr)
-        log.info('trying outside of loop')
-        self.model.setObjective(gp_expr[39], 1)
-        self.model.optimize()
+        # log.info('trying outside of loop')
+        # self.model.setObjective(gp_expr[39], 1)
+        # self.model.optimize()
 
-        log.info(f'full model status: {self.model.status}')
-        obbt_model = self.model.relax()
-        obbt_model.Params.OutputFlag = 0
-        obbt_model.update()
-        obbt_model.optimize()
-        log.info(f'obbt model status: {obbt_model.status}')
-        if obbt_model.status == 3:
-            obbt_model.computeIIS()
+        # log.info(f'full model status: {self.model.status}')
+        # obbt_model = self.model.relax()
+        # obbt_model.Params.OutputFlag = 0
+        # obbt_model.update()
+        # obbt_model.optimize()
+        # log.info(f'obbt model status: {obbt_model.status}')
+        # if obbt_model.status == 3:
+        #     log.info('computing IIS')
+        #     obbt_model.computeIIS()
 
 
         for sense in [gp.GRB.MINIMIZE, gp.GRB.MAXIMIZE]:
