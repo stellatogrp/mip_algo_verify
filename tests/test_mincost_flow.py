@@ -54,6 +54,7 @@ def test_flow():
 
     print(res)
     print(x.value)
+    cp_x = x.value
 
     A_block = spa.bmat([
         [A_supply, spa.eye(n_supply), None],
@@ -156,3 +157,40 @@ def test_flow():
     print(ukplus1)
 
     assert np.linalg.norm(uk - x_tilde.value) <= 1e-6
+
+    satlin_pdhg(c, A_supply, A_demand, b_supply, b_demand, u, cp_x)
+
+
+def satlin_pdhg(c, A_supply, A_demand, b_supply, b_demand, u, cp_x):
+    print('cp_x:', cp_x)
+    K = spa.vstack([-A_supply, A_demand])
+    q = np.hstack([-b_supply, b_demand])
+    t = 0.4 / spa.linalg.norm(K, ord=2)
+    print('t:', t)
+    print('c:', c)
+    print('u:', u)
+
+    zk = np.zeros(K.shape[1])
+    yk = np.zeros(K.shape[0])
+
+    K_max = 10000
+    for _ in range(K_max):
+        zkplus1 = satlin(zk - t * (c - K.T @ yk), 0, u)
+        ykplus1 = proj(yk + t * (q - K @ (2 * zkplus1 - zk)), A_supply.shape[0])
+
+        zk = zkplus1
+        yk = ykplus1
+
+    print('zK:', zk)
+
+    assert np.linalg.norm(cp_x - zk) <= 1e-6
+
+
+def proj(v, m1):
+    out = v.copy()
+    out[:m1] = np.maximum(out[:m1], 0)
+    return out
+
+
+def satlin(v, l, u):
+    return np.minimum(np.maximum(v, l), u)

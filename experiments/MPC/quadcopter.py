@@ -125,7 +125,7 @@ def main():
     m, n = A.shape
     rho = 10
     rho_inv = 1 / rho
-    sigma = 1e-6
+    sigma = 1e-4
 
     xk = np.zeros(n)
     yk = np.zeros(m)
@@ -139,6 +139,7 @@ def main():
 
     xyz_l2_fp_resids = []
     xs_l2_fp_resids = []
+    xz_scaled_resids = []
 
     for _ in range(K):
         xkplus1 = np.linalg.solve(lhs_mat, sigma * xk - q + rho * A.T @ zk - A.T @ yk)
@@ -153,6 +154,7 @@ def main():
         xs_resid = np.hstack([xkplus1 - xk, skplus1 - sk])
         xs_fp_resids.append(np.max(np.abs(xs_resid)))
         xs_l2_fp_resids.append(np.linalg.norm(xs_resid))
+        xz_scaled_resids.append(np.sqrt(sigma * np.linalg.norm(xkplus1 - xk) ** 2 + rho * np.linalg.norm(zkplus1 - zk) ** 2))
 
         xk = xkplus1
         yk = ykplus1
@@ -170,6 +172,7 @@ def main():
     plt.figure(figsize=(8, 6))
     plt.plot(range(1, K+1), xs_fp_resids, label='infty norm')
     plt.plot(range(1, K+1), xs_l2_fp_resids, label='2 norm')
+    plt.plot(range(1, K+1), xz_scaled_resids)
     plt.title('OSQP formulation')
 
     plt.yscale('log')
@@ -189,6 +192,7 @@ def main():
 
     xv_fp_resids = []
     xv_l2_fp_resids = []
+    xv_rhosigma_resids = []
 
     K = 100
     for _ in range(K):
@@ -199,6 +203,7 @@ def main():
         xv_stack = np.hstack([xkplus1 - xk, zkplus1 - zk])
         xv_fp_resids.append(np.max(np.abs(xv_stack)))
         xv_l2_fp_resids.append(np.linalg.norm(xv_stack))
+        xv_rhosigma_resids.append(np.sqrt(sigma * np.linalg.norm(xkplus1 - xk) ** 2 + rho * np.linalg.norm(wkplus1 - proj(zk, l, u)) ** 2))
 
         xk = xkplus1
         vk = vkplus1
@@ -210,6 +215,7 @@ def main():
     plt.figure(figsize=(8, 6))
     plt.plot(range(1, K+1), xv_fp_resids, label='infty norm')
     plt.plot(range(1, K+1), xv_l2_fp_resids, label='2 norm')
+    plt.plot(range(1, K+1), xv_rhosigma_resids)
     plt.title('Fixed point formulation')
 
     plt.yscale('log')
