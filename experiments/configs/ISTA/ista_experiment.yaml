@@ -33,7 +33,7 @@ x:
   u: 10.5
 
 K_min: 1
-K_max: 15
+K_max: 10
 relax_cutoff: 8
 pnorm: inf
 obj_scaling:

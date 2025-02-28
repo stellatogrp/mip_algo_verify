@@ -3,6 +3,7 @@ import logging
 import numpy as np
 
 from mipalgover.canonicalizers.gurobi_canonicalizer import GurobiCanonicalizer
+from mipalgover.canonicalizers.obbt_handlers import GurobiOBBTHandler
 from mipalgover.steps.affine import AffineStep
 from mipalgover.steps.relu import ReluStep
 from mipalgover.steps.saturated_linear import SaturatedLinearStep
@@ -18,6 +19,7 @@ class Verifier(object):
                  num_obbt=3,
                  theory_func=None,
                  solver='gurobi',
+                 obbt_handler='gurobi',
                  solver_params={}):
 
         self.num_obbt = num_obbt
@@ -33,6 +35,9 @@ class Verifier(object):
         if solver == 'gurobi':
             self.canonicalizer = GurobiCanonicalizer(gurobi_params=solver_params)
 
+        if obbt_handler == 'gurobi':
+            self.obbt_handler = GurobiOBBTHandler()
+
         self.lower_bounds = {}
         self.upper_bounds = {}
 
@@ -44,6 +49,9 @@ class Verifier(object):
         self.upper_bounds[param] = upcast(n, ub)
         self.canonicalizer.add_param_var(param, lb=lb, ub=ub)
 
+        if self.obbt:
+            self.obbt_handler.add_param_var(param, lb=lb, ub=ub)
+
         return param
 
     def add_initial_iterate(self, n, lb=-np.inf, ub=np.inf):
@@ -53,6 +61,9 @@ class Verifier(object):
         self.lower_bounds[iterate] = upcast(n, lb)
         self.upper_bounds[iterate] = upcast(n, ub)
         self.canonicalizer.add_initial_iterate_var(iterate, lb=lb, ub=ub)
+
+        if self.obbt:
+            self.obbt_handler.add_initial_iterate_var(iterate, lb=lb, ub=ub)
 
         return iterate
 
@@ -89,6 +100,10 @@ class Verifier(object):
         self.canonicalizer.add_iterate_var(iterate, lb=iterate_lb, ub=iterate_ub)
         self.canonicalizer.add_equality_constraint(lhs_mat @ iterate, rhs_expr)
 
+        if self.obbt:
+            self.obbt_handler.add_iterate_var(iterate, lb=iterate_lb, ub=iterate_ub)
+            self.obbt_handler.add_equality_constraint(lhs_mat @ iterate, rhs_expr)
+
         self.add_step(step)
 
         return iterate
@@ -110,7 +125,8 @@ class Verifier(object):
         relu_rhs_ub = relu(rhs_ub, proj_ranges=proj_ranges)
 
         if self.obbt:
-            obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+            # obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+            obbt_lb, obbt_ub = self.obbt_handler.obbt(rhs_expr)
 
             step.update_rhs_lb(obbt_lb)
             step.update_rhs_ub(obbt_ub)
@@ -131,9 +147,11 @@ class Verifier(object):
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_relu_constraints(step)
 
-        self.add_step(step)
+        if self.obbt:
+            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+            self.obbt_handler.add_relu_constraints(step, out_lb, out_ub)
 
-        # if convexification flag
+        self.add_step(step)
 
         return out_iterate
 
@@ -149,7 +167,8 @@ class Verifier(object):
         sl_rhs_ub = saturated_linear(rhs_ub, l, u)
 
         if self.obbt:
-            obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+            # obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+            obbt_lb, obbt_ub = self.obbt_handler.obbt(rhs_expr)
 
             step.update_rhs_lb(obbt_lb)
             step.update_rhs_ub(obbt_ub)
@@ -170,6 +189,10 @@ class Verifier(object):
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_saturated_linear_constraints(step, out_lb, out_ub)
 
+        if self.obbt:
+            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+            self.obbt_handler.add_saturated_linear_constraints(step, out_lb, out_ub)
+
         self.add_step(step)
 
         return out_iterate
@@ -186,7 +209,8 @@ class Verifier(object):
         st_rhs_ub = soft_threshold(rhs_ub, lambd)
 
         if self.obbt:
-            obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+            # obbt_lb, obbt_ub = self.canonicalizer.obbt(rhs_expr)
+            obbt_lb, obbt_ub = self.obbt_handler.obbt(rhs_expr)
 
             step.update_rhs_lb(obbt_lb)
             step.update_rhs_ub(obbt_ub)
@@ -219,6 +243,10 @@ class Verifier(object):
         # add new iterate and st constraints to canonicalizer
         self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
         self.canonicalizer.add_soft_threshold_constraints(step, out_lb, out_ub)
+
+        if self.obbt:
+            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+            self.obbt_handler.add_soft_threshold_constraints(step, out_lb, out_ub)
 
         self.add_step(step)
 
