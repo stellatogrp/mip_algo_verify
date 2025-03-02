@@ -155,9 +155,9 @@ class Verifier(object):
 
         return out_iterate
 
-    def saturated_linear_step(self, rhs_expr, l, u):
+    def saturated_linear_step(self, rhs_expr, l, u, relax_binary_vars=False):
         out_iterate = Vector(rhs_expr.get_output_dim())
-        step = SaturatedLinearStep(out_iterate, rhs_expr, l, u)
+        step = SaturatedLinearStep(out_iterate, rhs_expr, l, u, relax_binary_vars=relax_binary_vars)
 
         rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
         step.update_rhs_lb(rhs_lb)

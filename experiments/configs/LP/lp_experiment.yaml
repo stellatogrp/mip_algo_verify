@@ -43,9 +43,9 @@ flow:
     supply_lb: 10
     supply_ub: 10
     demand_lb: -7
-    demand_ub: -5
-    capacity_lb: 4
-    capacity_ub: 4
+    demand_ub: -6.5
+    capacity_lb: 5
+    capacity_ub: 5
 
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 incremental: True
@@ -66,8 +66,10 @@ obj_scaling:
   default: 1e-3
 warmstart: True
 huchette_cuts: True
+relax_cutoff: 10
+relax_cutoff_time: 3600
 
-callback: True
+callback: False
 exact_conv_relax:
   use_in_bounds: False  # this does not do anything useful, should always be false
   num_cuts: 1

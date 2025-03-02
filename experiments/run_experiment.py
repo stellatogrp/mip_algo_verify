@@ -5,7 +5,9 @@ import sys
 import FISTA.FISTA as FISTA
 import hydra
 import ISTA.ISTA as ISTA
-import LP.LP as LP
+
+# import LP.LP as LP
+import LP.LP_satlin as LP
 
 log = logging.getLogger(__name__)
 
