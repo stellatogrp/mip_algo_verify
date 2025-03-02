@@ -2,11 +2,17 @@ import logging
 import os
 import sys
 
+import FISTA.FISTA as FISTA
 import hydra
 import ISTA.ISTA as ISTA
 import LP.LP as LP
 
 log = logging.getLogger(__name__)
+
+
+@hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
+def main_experiment_fista(cfg):
+    FISTA.run(cfg)
 
 
 @hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
@@ -38,41 +44,10 @@ func_driver_map = {
     # 'NNQP': main_experiment_nnqp,
     'ISTA': main_experiment_ista,
     # 'ISTA_scratch': main_experiment_ista_scratch,
-    # 'FISTA': main_experiment_fista,
+    'FISTA': main_experiment_fista,
     # 'Portfolio': main_experiment_portfolio,
 }
 
-
-# NNQP_params = [
-#     ['n=10', 'two_step=True', 'one_step=False'],
-#     ['n=10', 'two_step=False', 'one_step=True'],
-#     ['n=20', 'two_step=True', 'one_step=False'],
-#     ['n=20', 'two_step=False', 'one_step=True'],
-#     ['n=30', 'two_step=True', 'one_step=False'],
-#     ['n=30', 'two_step=False', 'one_step=True'],
-#     ['n=40', 'two_step=True', 'one_step=False'],
-#     ['n=40', 'two_step=False', 'one_step=True'],
-# ]
-
-# LP_params = [
-#     ['flow.x.demand_ub=-6', 'momentum=False'],
-#     ['flow.x.demand_ub=-6', 'momentum=True'],
-#     ['flow.x.demand_ub=-5', 'momentum=False'],
-#     ['flow.x.demand_ub=-5', 'momentum=True'],
-#     ['flow.x.demand_ub=-4', 'momentum=False'],
-#     ['flow.x.demand_ub=-4', 'momentum=True'],
-#     ['flow.x.demand_ub=-3', 'momentum=False'],
-#     ['flow.x.demand_ub=-3', 'momentum=True'],
-#     ['flow.x.demand_ub=-2', 'momentum=False'],
-#     ['flow.x.demand_ub=-2', 'momentum=True'],
-# ]
-
-# LP_params = [
-#     ['momentum=False', 'K_max=50', 'mipfocus=0'],
-#     # ['momentum=False', 'K_max=50', 'mipfocus=3'],
-#     ['momentum=True', 'K_max=50', 'mipfocus=0'],
-#     # ['momentum=True', 'K_max=50', 'mipfocus=3'],
-# ]
 
 LP_params = [
     ['momentum=False', 'K_max=50', 'huchette_cuts=True'],
@@ -82,21 +57,18 @@ LP_params = [
 ]
 
 ISTA_params = [
-    ['m=20', 'n=15', 'K_max=50', 'lambd.val=0.01'],
-    ['m=15', 'n=20', 'K_max=50', 'lambd.val=0.01'],
-    # ['m=30', 'n=20', 'K_max=50', 'lambd.val=1'],
-    # ['m=20', 'n=30', 'K_max=50', 'lambd.val=1'],
-]
-
-ISTA_scratch_params = [
-    ['m=30', 'n=20', 'K_max=25'],
-    ['m=20', 'n=30', 'K_max=25'],
+    ['m=25', 'n=20', 'huchette_cuts=True'],
+    ['m=20', 'n=25', 'huchette_cuts=True'],
+    ['m=25', 'n=20', 'huchette_cuts=False'],
+    ['m=20', 'n=25', 'huchette_cuts=False'],
 ]
 
 # add FISTA params
 FISTA_params = [
-    ['m=20', 'n=15', 'K_max=40', 'lambd.val=0.01'],
-    ['m=15', 'n=20', 'K_max=40', 'lambd.val=0.01'],
+    ['m=25', 'n=20', 'huchette_cuts=True'],
+    ['m=20', 'n=25', 'huchette_cuts=True'],
+    ['m=25', 'n=20', 'huchette_cuts=False'],
+    ['m=20', 'n=25', 'huchette_cuts=False'],
 ]
 
 def main():

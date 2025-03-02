@@ -33,7 +33,7 @@ x:
   u: 10.5
 
 K_min: 1
-K_max: 10
+K_max: 40
 relax_cutoff: 10
 relax_cutoff_time: 3600
 
@@ -57,7 +57,7 @@ huchette_cuts: False
 C_norm: 2
 star_bound_M: 1e2
 init_dist_M: 10
-init_dist_time: 120
+init_dist_time: 60
 
 exact_conv_relax:
   use_in_l1_rel: False

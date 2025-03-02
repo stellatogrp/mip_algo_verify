@@ -24,8 +24,7 @@ plt.rcParams.update({
     "figure.figsize": (9, 6)})
 
 
-def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
-    # pnorm = cfg.pnorm
+def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     m, n = cfg.m, cfg.n
     At = jnp.eye(n) - t * A.T @ A
     Bt = t * A.T
@@ -39,7 +38,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     max_sample_resids, z_samples, x_samples, max_idx = samples(cfg, A, lambd, t, c_z, x_l, x_u)
 
     log.info(max_idx)
-    log.info(f'max sample resids: {max_sample_resids}')
+    log.info(max_sample_resids)
 
     gurobi_params = {
         'TimeLimit': cfg.timelimit,
@@ -51,11 +50,15 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     init_C = init_dist(cfg, A, t, lambd, c_z, x_l, x_u, C_norm=cfg.C_norm)
     log.info(f'init_C: {init_C}')
 
+    betas_precomp = [1]
+    for _ in range(cfg.K_max):
+        betas_precomp.append(.5 * (1 + np.sqrt(1 + 4 * np.power(betas_precomp[-1], 2))))
+    log.info(betas_precomp)
+
     def theory_func(k):
         if k == 1:
             return np.inf
-        return 2 * init_C / np.sqrt((k-1) * (k+2))
-        # return np.inf
+        return 2 * init_C / np.sqrt(np.sum(betas_precomp[:k-1]))
 
     VP = Verifier(solver_params=gurobi_params, theory_func=theory_func)
 
@@ -63,7 +66,11 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     z0 = VP.add_initial_iterate(n, lb=np.array(c_z), ub=np.array(c_z))
 
     z = [None for _ in range(K_max+1)]
+    w = [None for _ in range(K_max+1)]
+    betas = [None for _ in range(K_max+1)]
     z[0] = z0
+    w[0] = z0
+    betas[0] = 1
 
     Deltas = []
     rel_LP_sols = []
@@ -78,7 +85,10 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     for k in range(1, K_max+1):
         log.info(f'Solving VP at k={k}')
 
-        z[k] = VP.soft_threshold_step(At @ z[k-1] + Bt @ x_param, lambda_t, relax_binary_vars=relax_binary_vars)
+        z[k] = VP.soft_threshold_step(At @ w[k-1] + Bt @ x_param, lambda_t, relax_binary_vars=relax_binary_vars)
+        betas[k] = .5 * (1 + np.sqrt(1 + 4 * np.power(betas[k-1], 2)))
+        w[k] = z[k] + (betas[k-1] - 1) / betas[k] * (z[k] - z[k-1])
+
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
         VP.set_infinity_norm_objective(z[k] - z[k-1])
@@ -112,9 +122,6 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         log.info(f'times:{jnp.array(times)}')
         log.info(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
 
-        # debug(k, At, Bt, lambda_t, c_z, VP, z, x_param, data['objVal'])
-        # debug_sample_max(k, At, Bt, lambda_t, VP, z[:k+1], z_samples, x_samples, max_idx, x_l, x_u)
-
 
 def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
@@ -146,7 +153,7 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, D
     ax.set_xlabel(r'$K$')
     ax.set_ylabel('Fixed-point residual')
     ax.set_yscale('log')
-    ax.set_title(rf'ISTA VP, $n={n}$, $m={m}$')
+    ax.set_title(rf'FISTA VP, $n={n}$, $m={m}$')
 
     ax.legend()
 
@@ -178,85 +185,32 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, D
     plt.close()
 
 
-def debug(K, At, Bt, lambda_t, c_z, VP, zk_vals, x_param, obj):
-    log.info(f'----DEBUG at K={K}')
-    x_test = VP.extract_sol(x_param)
-    log.info(f'VP x: {x_test}')
-    log.info(f'c_z {c_z}')
-    log.info(f'obj: {obj}')
-
-    zk = np.array(c_z)
-    for i in range(1, K+1):
-
-        zk_new = soft_threshold(At @ zk + Bt @ x_test, lambda_t)
-
-        vp_zk = VP.extract_sol(zk_vals[i])
-        vp_zkminus1 = VP.extract_sol(zk_vals[i-1])
-        vp_val = np.max(np.abs(vp_zk - vp_zkminus1))
-        log.info(f'VP {i}: {vp_val} {vp_zk}')
-        log.info(f'direct alg: {zk_new}')
-        log.info(f'VP alg diff: {vp_zk - zk_new}')
-
-        zk = zk_new
-
-
-def debug_sample_max(K, At, Bt, lambda_t, VP, zk_vars, z_samples, x_samples, max_idx, x_l, x_u):
-    log.info(f'----DEBUG SAMPLE MAX at K={K}----')
-    K_idx = max_idx[K-1]
-    z_samp = z_samples[K_idx]
-    x_samp = x_samples[K_idx]
-
-    assert np.all(x_l <= x_samp)
-    assert np.all(x_samp <= x_u)
-
-    test_zs = [z_samp]
-    zk = z_samp
-    for _ in range(K):
-        zk = soft_threshold(At @ zk + Bt @ x_samp, lambda_t)
-        test_zs.append(zk)
-    log.info(f'test zs: {test_zs}')
-    for k in range(K+1):
-        log.info(f'k={k}')
-        curr_z = test_zs[k]
-        log.info(f'zk from sample: {curr_z}')
-        zk_l, zk_u = VP.extract_bounds(zk_vars[k])
-        log.info(f'zk_l: {zk_l}')
-        log.info(f'zk - lower: {curr_z - zk_l}')
-        log.info(f'zk_u: {zk_u}')
-        log.info(f'upper - zk: {zk_u - curr_z}')
-    log.info(f'sample max: {np.max(np.abs(test_zs[-1] - test_zs[-2]))}')
-    zK_l, zK_u = VP.extract_bounds(zk_vars[-1])
-    zKminus1_l, zKminus1_u = VP.extract_bounds(zk_vars[-2])
-    r_u = zK_u - zKminus1_l
-    r_l = zK_l - zKminus1_u
-    r_samp = test_zs[-1] - test_zs[-2]
-    log.info(f'r_samp: {r_samp}')
-    log.info(f'r_u - r_samp: {r_u - r_samp}')
-    log.info(f'r_samp - r_l: {r_samp - r_l}')
-
-    zK_VP = VP.extract_sol(zk_vars[-1])
-    zKminus1_VP = VP.extract_sol(zk_vars[-2])
-    log.info(f'r VP: {zK_VP - zKminus1_VP}')
-
-
 def soft_threshold(x, gamma):
     return jnp.sign(x) * jax.nn.relu(jnp.abs(x) - gamma)
 
 
-def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
+def FISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
     n = At.shape[0]
     # yk_all = jnp.zeros((K+1, n))
     zk_all = jnp.zeros((K+1, n))
+    wk_all = jnp.zeros((K+1, n))
+    beta_all = jnp.zeros((K+1))
     resids = jnp.zeros(K+1)
 
     zk_all = zk_all.at[0].set(z0)
+    wk_all = wk_all.at[0].set(z0)
+    beta_all = beta_all.at[0].set(1.)
 
     def body_fun(k, val):
-        zk_all, resids = val
+        zk_all, wk_all, beta_all, resids = val
         zk = zk_all[k]
+        wk = wk_all[k]
+        beta_k = beta_all[k]
 
-        ykplus1 = At @ zk + Bt @ x
+        ykplus1 = At @ wk + Bt @ x
         zkplus1 = soft_threshold(ykplus1, lambda_t)
+        beta_kplus1 = .5 * (1 + jnp.sqrt(1 + 4 * jnp.power(beta_k, 2)))
+        wkplus1 = zkplus1 + (beta_k - 1) / beta_kplus1 * (zkplus1 - zk)
 
         if pnorm == 'inf':
             resid = jnp.max(jnp.abs(zkplus1 - zk))
@@ -264,11 +218,14 @@ def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
             resid = jnp.linalg.norm(zkplus1 - zk, ord=pnorm)
 
         zk_all = zk_all.at[k+1].set(zkplus1)
+        wk_all = wk_all.at[k+1].set(wkplus1)
+        beta_all = beta_all.at[k+1].set(beta_kplus1)
         resids = resids.at[k+1].set(resid)
-        return (zk_all, resids)
 
-    zk, resids = jax.lax.fori_loop(0, K, body_fun, (zk_all, resids))
-    return zk, resids
+        return (zk_all, wk_all, beta_all, resids)
+
+    zk, wk, _, resids = jax.lax.fori_loop(0, K, body_fun, (zk_all, wk_all, beta_all, resids))
+    return zk, wk, resids
 
 
 def samples(cfg, A, lambd, t, c_z, x_l, x_u):
@@ -290,10 +247,10 @@ def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     z_samples = jax.vmap(z_sample)(sample_idx)
     x_samples = jax.vmap(x_sample)(sample_idx)
 
-    def ista_resids(i):
-        return ISTA_alg(At, Bt, z_samples[i], x_samples[i], lambda_t, cfg.K_max, pnorm=cfg.pnorm)
+    def fista_resids(i):
+        return FISTA_alg(At, Bt, z_samples[i], x_samples[i], lambda_t, cfg.K_max, pnorm=cfg.pnorm)
 
-    _, sample_resids = jax.vmap(ista_resids)(sample_idx)
+    _, _, sample_resids = jax.vmap(fista_resids)(sample_idx)
     log.info(sample_resids)
     max_sample_resids = jnp.max(sample_resids, axis=0)
     max_idx = jnp.argmax(sample_resids, axis=0)
@@ -329,10 +286,10 @@ def samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u):
             return jax.random.uniform(key, shape=(cfg.m,), minval=x_l, maxval=x_u)
 
         x_samples_k = jax.vmap(x_sample)(sample_idx)
-        def ista_resids(i):
-            return ISTA_alg(At, Bt, z_samples[i], x_samples_k[i], lambda_t, k, pnorm=cfg.pnorm)
+        def fista_resids(i):
+            return FISTA_alg(At, Bt, z_samples[i], x_samples_k[i], lambda_t, k, pnorm=cfg.pnorm)
 
-        _, sample_resids = jax.vmap(ista_resids)(sample_idx)
+        _, sample_resids = jax.vmap(fista_resids)(sample_idx)
         log.info(sample_resids)
         max_sample_k = jnp.max(sample_resids[:, -1])
         log.info(f'max: {max_sample_k}')
@@ -388,7 +345,7 @@ def lstsq_sol(cfg, A, lambd, x_l, x_u):
     return x_lstsq
 
 
-def random_ISTA_run(cfg):
+def random_FISTA_run(cfg):
     m, n = cfg.m, cfg.n
     log.info(cfg)
 
@@ -418,7 +375,7 @@ def random_ISTA_run(cfg):
     elif cfg.z0.type == 'zero':
         c_z = jnp.zeros(n)
 
-    ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
+    FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
 
 
 def sparse_coding_A(cfg):
@@ -474,7 +431,7 @@ def sparse_coding_b_set(cfg, A):
     return b_set
 
 
-def sparse_coding_ISTA_run(cfg):
+def sparse_coding_FISTA_run(cfg):
     # m, n = cfg.m, cfg.n
     n = cfg.n
     log.info(cfg)
@@ -516,7 +473,7 @@ def sparse_coding_ISTA_run(cfg):
     elif cfg.z0.type == 'zero':
         c_z = jnp.zeros(n)
 
-    ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
+    FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
 
 
 def sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
@@ -628,6 +585,6 @@ def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
 
 def run(cfg):
     if cfg.problem_type == 'random':
-        random_ISTA_run(cfg)
+        random_FISTA_run(cfg)
     elif cfg.problem_type == 'sparse_coding':
-        sparse_coding_ISTA_run(cfg)
+        sparse_coding_FISTA_run(cfg)
