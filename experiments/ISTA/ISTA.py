@@ -1,11 +1,13 @@
 import logging
 
 import cvxpy as cp
+import gurobipy as gp
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from tqdm import trange
 
 from mipalgover.verifier import Verifier
 
@@ -46,11 +48,14 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         # 'NumericFocus': 3,
     }
 
+    init_C = init_dist(cfg, A, t, lambd, c_z, x_l, x_u, C_norm=cfg.C_norm)
+    log.info(f'init_C: {init_C}')
+
     def theory_func(k):
         if k == 1:
             return np.inf
-        # return 2 * init_C / np.sqrt((k-1) * (k+2))
-        return np.inf
+        return 2 * init_C / np.sqrt((k-1) * (k+2))
+        # return np.inf
 
     VP = Verifier(solver_params=gurobi_params, theory_func=theory_func)
 
@@ -65,61 +70,47 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     Delta_bounds = []
     Delta_gaps = []
     times = []
-    # theory_improv_fracs = []
+    theory_improv_fracs = []
+    num_bin_vars = []
 
     for k in range(1, K_max+1):
         log.info(f'Solving VP at k={k}')
 
         z[k] = VP.soft_threshold_step(At @ z[k-1] + Bt @ x_param, lambda_t, relax_binary_vars=(k >= cfg.relax_cutoff))
-        # theory_improv = VP.theory_bound(k, z[k], z[k-1])
+        theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
         VP.set_infinity_norm_objective(z[k] - z[k-1])
         VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=False)
 
         data = VP.extract_solver_data()
-        print(data)
+        log.info(data)
 
         Deltas.append(data['objVal'])
         rel_LP_sols.append(data['rel_LP_sol'])
         Delta_bounds.append(data['objBound'])
         Delta_gaps.append(data['MIPGap'])
         times.append(data['Runtime'])
-        # theory_improv_fracs.append(theory_improv)
+        num_bin_vars.append(data['numBinVars'])
+        theory_improv_fracs.append(theory_improv)
 
-        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times)
+        if cfg.postprocessing:
+            postprocess_improv = VP.post_process(z[k], z[0], np.sum(Deltas), return_improv_frac=True)
+            log.info(f'postprocess improv: {postprocess_improv}')
 
-        print(f'samples: {max_sample_resids}')
-        print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
-        print(f'VP residuals: {jnp.array(Deltas)}')
-        print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
-        print(f'times:{jnp.array(times)}')
-        # print(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
+        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars)
+
+        log.info(f'samples: {max_sample_resids}')
+        log.info(f'rel LP sols: {jnp.array(rel_LP_sols)}')
+        log.info(f'VP residuals: {jnp.array(Deltas)}')
+        log.info(f'VP residual bounds: {jnp.array(Delta_bounds)}')
+        log.info(f'times:{jnp.array(times)}')
+        log.info(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
 
         # debug(k, At, Bt, lambda_t, c_z, VP, z, x_param, data['objVal'])
-        debug_sample_max(k, At, Bt, lambda_t, VP, z[:k+1], z_samples, x_samples, max_idx, x_l, x_u)
-        # log.info(f'c_z: {c_z}')
-        # z0_l, z0_u = VP.extract_bounds(z0)
-        # log.info(z0_l)
-        # log.info(z0_u)
-        # log.info(VP.extract_bounds(z[0]))
-        # exit(0)
-
-    # x = VP.extract_sol(x_param)
-    # log.info(f'testing at K={cfg.K_max}')
-    # ISTA_true, true_resids = ISTA_alg(At, Bt, c_z, jnp.array(x), lambda_t, cfg.K_max, pnorm=cfg.pnorm)
-    # log.info(ISTA_true)
-
-    # for k in range(0, cfg.K_max + 1):
-    #     ztest = VP.extract_sol(z[k])
-    #     log.info(f'K={k}')
-    #     log.info(ztest)
-
-    # log.info(f'with x={x}')
-    # log.info(f'x_l = {x_l}')
-    # log.info(f'x_u = {x_u}')
+        # debug_sample_max(k, At, Bt, lambda_t, VP, z[:k+1], z_samples, x_samples, max_idx, x_l, x_u)
 
 
-def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes):
+def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     df.to_csv('resids.csv', index=False, header=False)
 
@@ -132,9 +123,12 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, D
     df = pd.DataFrame(solvetimes)
     df.to_csv('solvetimes.csv', index=False, header=False)
 
-    # if cfg.theory_bounds:
-    #     df = pd.DataFrame(theory_tighter_fracs)
-    #     df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
+    df = pd.DataFrame(num_bin_vars)
+    df.to_csv('numBinVars.csv', index=False, header=False)
+
+    if cfg.theory_bounds:
+        df = pd.DataFrame(theory_tighter_fracs)
+        df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
     # plotting resids so far
     fig, ax = plt.subplots()
@@ -517,6 +511,113 @@ def sparse_coding_ISTA_run(cfg):
         c_z = jnp.zeros(n)
 
     ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u)
+
+
+def sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
+    sample_idx = jnp.arange(cfg.samples.init_dist_N)
+    m, n = A.shape
+
+    def z_sample(i):
+        return c_z
+
+    def x_sample(i):
+        key = jax.random.PRNGKey(cfg.samples.x_seed_offset + i)
+        # TODO add the if, start with box case only
+        return jax.random.uniform(key, shape=(m,), minval=x_LB, maxval=x_UB)
+
+    # z_samples = jax.vmap(z_sample)(sample_idx)
+    x_samples = jax.vmap(x_sample)(sample_idx)
+
+    distances = jnp.zeros(cfg.samples.init_dist_N)
+    for i in trange(cfg.samples.init_dist_N):
+        z = cp.Variable(n)
+        x_samp = x_samples[i]
+        obj = cp.Minimize(.5 * cp.sum_squares(A @ z - x_samp) + lambd * cp.norm(z, 1))
+        prob = cp.Problem(obj)
+        prob.solve()
+
+        distances = distances.at[i].set(np.linalg.norm(z.value - c_z, ord=C_norm))
+
+    # log.info(distances)
+
+    return jnp.max(distances), z.value, x_samp
+
+
+def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
+    SM_initC, z_samp, x_samp = sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=C_norm)
+    log.info(SM_initC)
+
+    m, n = A.shape
+    model = gp.Model()
+
+    At = jnp.eye(n) - t * A.T @ A
+    Bt = t * A.T
+    lambda_t = lambd * t
+
+    At = np.asarray(At)
+    Bt = np.asarray(Bt)
+
+    bound_M = cfg.star_bound_M
+    z_star = model.addMVar(n, lb=-bound_M, ub=bound_M)
+    x = model.addMVar(m, lb=x_LB, ub=x_UB)
+    z0 = model.addMVar(n, lb=c_z, ub=c_z)
+    w1 = model.addMVar(n, vtype=gp.GRB.BINARY)
+    w2 = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+    M = cfg.init_dist_M
+    z_star.Start = z_samp
+    x.Start = x_samp
+
+    model.setParam('TimeLimit', cfg.timelimit)
+    model.setParam('MIPGap', cfg.mipgap)
+
+    y_star = At @ z_star + Bt @ x
+
+    for i in range(n):
+        model.addConstr(z_star[i] >= y_star[i] - lambda_t)
+        model.addConstr(z_star[i] <= y_star[i] + lambda_t)
+
+        model.addConstr(z_star[i] <= y_star[i] - lambda_t + (2 * lambda_t)*(1-w1[i]))
+        model.addConstr(z_star[i] >= y_star[i] + lambda_t + (-2 * lambda_t) * (1-w2[i]))
+
+        model.addConstr(z_star[i] <= M * w1[i])
+        model.addConstr(z_star[i] >= -M * w2[i])
+
+        model.addConstr(w1[i] + w2[i] <= 1)
+
+    if C_norm == 2:
+        obj = (z_star - z0) @ (z_star - z0)
+        model.setObjective(obj, gp.GRB.MAXIMIZE)
+        model.optimize()
+
+        # max_rad = np.sqrt(model.objVal)
+        incumbent = np.sqrt(model.objVal)
+        max_rad = np.sqrt(model.objBound)
+
+    elif C_norm == 1:
+        y = (z_star - z0)
+        up = model.addMVar(n, lb=0, ub=bound_M)
+        un = model.addMVar(n, lb=0, ub=bound_M)
+        omega = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+        model.addConstr(up - un == y)
+        for i in range(n):
+            model.addConstr(up[i] <= bound_M * omega[i])
+            model.addConstr(un[i] <= bound_M * (1-omega[i]))
+
+        model.setObjective(gp.quicksum(up + un), gp.GRB.MAXIMIZE)
+        model.optimize()
+
+        # max_rad = model.objVal
+        incumbent = model.objVal
+        max_rad = model.objBound
+
+    log.info(f'sample max init C: {SM_initC}')
+    log.info(f'run time: {model.Runtime}')
+    log.info(f'incumbent sol: {incumbent}')
+    log.info(f'miqp max radius bound: {max_rad}')
+
+    return incumbent
 
 
 def run(cfg):
