@@ -43,7 +43,7 @@ flow:
     supply_lb: 10
     supply_ub: 10
     demand_lb: -7
-    demand_ub: -6
+    demand_ub: -5
     capacity_lb: 4
     capacity_ub: 4
 
@@ -59,7 +59,7 @@ timelimit: 7200
 mipfocus: 0
 
 K_min: 1
-K_max: 25
+K_max: 50
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
