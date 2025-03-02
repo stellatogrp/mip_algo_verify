@@ -2,17 +2,17 @@ A_rng_seed: 0
 # lambd: 1e-2
 # lambd: adaptive
 lambd:
-  val: 0.01  # either a number or 'adaptive'
+  val: 0.1  # either a number or 'adaptive'
   scalar: 0.1  # if val == 'adaptive', then lambda = scalar * infty norm of A.T @ x for x the center of param set
 t: 0.04
 t_rel: 0.5
-m: 25
-n: 50
+m: 20
+n: 25
 mu: 1
 L: 5
 
 x_star:
-  std: 0.2  # 0.2 default
+  std: 0.1  # 0.2 default
   rng_seed: 1
   nonzero_prob: 0.1
   num: 100
@@ -33,8 +33,10 @@ x:
   u: 10.5
 
 K_min: 1
-K_max: 4
+K_max: 40
 relax_cutoff: 10
+relax_cutoff_time: 3600
+
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
@@ -42,8 +44,8 @@ obj_scaling:
 warmstart: False
 
 build_from_scratch: False
-theory_bounds: False
-postprocessing: False
+theory_bounds: True
+postprocessing: True
 opt_based_tightening: False
 num_obbt_iter: 5
 
@@ -54,7 +56,8 @@ huchette_cuts: False
 
 C_norm: 2
 star_bound_M: 1e2
-init_dist_M: 100
+init_dist_M: 10
+init_dist_time: 60
 
 exact_conv_relax:
   use_in_l1_rel: False
