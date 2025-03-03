@@ -99,7 +99,7 @@ class Quadcopter(object):
         l = np.hstack([leq, lineq])
         u = np.hstack([ueq, uineq])
 
-        print(A.shape)
+        # print(A.shape)
         self.P = P
         self.q = q
         self.A = A
@@ -108,8 +108,11 @@ class Quadcopter(object):
 
 
 def main():
-    qc = Quadcopter(T=2)
+    qc = Quadcopter(T=10)
     P, q, A, l, u = qc.P, qc.q, qc.A, qc.l, qc.u
+    print(P.shape)
+    print(A.shape)
+    # exit(0)
 
     x = cp.Variable(A.shape[1])
     obj = .5 * cp.quad_form(x, P) + q.T @ x
@@ -180,7 +183,7 @@ def main():
     plt.xlabel(r'$K$')
     plt.legend()
     # plt.show()
-    plt.savefig('osqp_version.pdf')
+    # plt.savefig('osqp_version.pdf')
 
     plt.cla()
     plt.clf()
@@ -223,7 +226,7 @@ def main():
     plt.xlabel(r'$K$')
     plt.legend()
     # plt.show()
-    plt.savefig('fixed_pt_version.pdf')
+    # plt.savefig('fixed_pt_version.pdf')
 
 
 def proj(v, l, u):

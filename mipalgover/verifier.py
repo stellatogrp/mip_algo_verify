@@ -54,6 +54,30 @@ class Verifier(object):
 
         return param
 
+    def add_param_stack(self, param_list):
+        dim = 0
+        lbs = []
+        ubs = []
+
+        for p in param_list:
+            assert p in self.params
+            dim += p.n
+            lbs.append(self.lower_bounds[p])
+            ubs.append(self.upper_bounds[p])
+        lb = np.hstack(lbs)
+        ub = np.hstack(ubs)
+
+        param_stack_var = Vector(dim)
+        self.lower_bounds[param_stack_var] = lb
+        self.upper_bounds[param_stack_var] = ub
+
+        self.canonicalizer.add_param_stack_var(param_stack_var, param_list)
+
+        if self.obbt:
+            self.obbt_handler.add_param_stack_var(param_stack_var, param_list)
+
+        return param_stack_var
+
     def add_initial_iterate(self, n, lb=-np.inf, ub=np.inf):
         assert np.all(lb <= ub)
         iterate = Vector(n)
@@ -192,6 +216,57 @@ class Verifier(object):
         if self.obbt:
             self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
             self.obbt_handler.add_saturated_linear_constraints(step, out_lb, out_ub)
+
+        self.add_step(step)
+
+        return out_iterate
+
+    def saturated_linear_param_step(self, rhs_expr, l, u, relax_binary_vars=False):
+        assert isinstance(l, Vector) and isinstance(u, Vector)
+        out_iterate = Vector(rhs_expr.get_output_dim())
+        step = SaturatedLinearStep(out_iterate, rhs_expr, l, u, relax_binary_vars=relax_binary_vars)
+
+        rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
+        step.update_rhs_lb(rhs_lb)
+        step.update_rhs_ub(rhs_ub)
+
+        l_lb, l_ub = self.lower_bounds[l], self.upper_bounds[l]
+        u_lb, u_ub = self.lower_bounds[u], self.upper_bounds[u]
+
+        assert np.all(l_lb <= l_ub)
+        assert np.all(u_lb <= u_ub)
+
+        sl_rhs_lb = saturated_linear(rhs_lb, l_lb, u_ub)
+        sl_rhs_ub = saturated_linear(rhs_ub, l_lb, u_ub)
+
+        # print(rhs_lb, rhs_ub)
+        # print(sl_rhs_lb, sl_rhs_ub)
+
+        if self.obbt:
+            obbt_lb, obbt_ub = self.obbt_handler.obbt(rhs_expr)
+
+            step.update_rhs_lb(obbt_lb)
+            step.update_rhs_ub(obbt_ub)
+
+            sl_obbt_lb = saturated_linear(obbt_lb, l_lb, u_ub)
+            sl_obbt_ub = saturated_linear(obbt_ub, l_lb, u_ub)
+
+            out_lb = sl_obbt_lb
+            out_ub = sl_obbt_ub
+        else:
+            out_lb = sl_rhs_lb
+            out_ub = sl_rhs_ub
+
+        self.iterates.append(out_iterate)
+        self.lower_bounds[out_iterate] = out_lb
+        self.upper_bounds[out_iterate] = out_ub
+
+        self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+        self.canonicalizer.add_saturated_linear_param_constraints(step, out_lb, out_ub, l_lb, l_ub, u_lb, u_ub)
+
+        if self.obbt:
+            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+            self.obbt_handler.add_saturated_linear_param_constraints(step, out_lb, out_ub, l_lb, l_ub, u_lb, u_ub)
 
         self.add_step(step)
 
