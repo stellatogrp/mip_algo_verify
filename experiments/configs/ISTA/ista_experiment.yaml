@@ -1,4 +1,4 @@
-A_rng_seed: 0
+A_rng_seed: 2
 # lambd: 1e-2
 # lambd: adaptive
 lambd:
@@ -7,7 +7,7 @@ lambd:
 t: 0.04
 t_rel: 0.5
 m: 20
-n: 25
+n: 15
 mu: 1
 L: 5
 

@@ -496,6 +496,7 @@ def sparse_coding_ISTA_run(cfg):
 
     x_l = jnp.min(b_set, axis=1)
     x_u = jnp.max(b_set, axis=1)
+    x_u = x_l + .1
 
     log.info(f'size of x set: {x_u - x_l}')
 
