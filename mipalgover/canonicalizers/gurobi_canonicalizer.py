@@ -251,7 +251,7 @@ class GurobiCanonicalizer(object):
         rhs_gp_expr = self.lin_expr_to_gp_expr(rhs)
         rhs_lb = step.rhs_lb
         rhs_ub = step.rhs_ub
-        n = lhs.get_output_dim()
+        # n = lhs.get_output_dim()
 
         out_constraints = []
         new_w1 = {}

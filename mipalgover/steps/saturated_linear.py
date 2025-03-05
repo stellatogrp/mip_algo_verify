@@ -13,11 +13,11 @@ class SaturatedLinearStep(Step):
 
         if equality_ranges is None:
             self.equality_ranges = [(0, 0)]
-        
+
         self.process_equality_ranges()
 
     def process_equality_ranges(self):
-        equality_ranges = self.equality_ranges
+        # equality_ranges = self.equality_ranges
 
         ineq_indices = set(list(range(0, self.rhs_expr.get_output_dim())))
         eq_indices = set([])
@@ -27,6 +27,6 @@ class SaturatedLinearStep(Step):
 
             ineq_indices -= curr_range_set
             eq_indices = eq_indices.union(curr_range_set)
-        
+
         self.eq_indices = eq_indices
         self.ineq_indices = ineq_indices
