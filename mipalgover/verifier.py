@@ -18,6 +18,7 @@ class Verifier(object):
     def __init__(self,
                  num_obbt=3,
                  theory_func=None,
+                 obbt=True,
                  solver='gurobi',
                  obbt_handler='gurobi',
                  solver_params={}):
@@ -25,7 +26,7 @@ class Verifier(object):
         self.num_obbt = num_obbt
         self.objective = None
         self.theory_func = theory_func
-        self.obbt = True
+        self.obbt = obbt
 
         self.params = []
         self.iterates = []
@@ -221,10 +222,10 @@ class Verifier(object):
 
         return out_iterate
 
-    def saturated_linear_param_step(self, rhs_expr, l, u, relax_binary_vars=False):
+    def saturated_linear_param_step(self, rhs_expr, l, u, relax_binary_vars=False, equality_ranges=None):
         assert isinstance(l, Vector) and isinstance(u, Vector)
         out_iterate = Vector(rhs_expr.get_output_dim())
-        step = SaturatedLinearStep(out_iterate, rhs_expr, l, u, relax_binary_vars=relax_binary_vars)
+        step = SaturatedLinearStep(out_iterate, rhs_expr, l, u, relax_binary_vars=relax_binary_vars, equality_ranges=equality_ranges)
 
         rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
         step.update_rhs_lb(rhs_lb)
