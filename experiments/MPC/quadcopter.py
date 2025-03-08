@@ -1,3 +1,5 @@
+import logging
+
 import cvxpy as cp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,6 +15,8 @@ plt.rcParams.update({
     # "font.sans-serif": ["Helvetica Neue"],
     "font.size": 20,
     "figure.figsize": (9, 6)})
+
+log = logging.getLogger(__name__)
 
 
 class Quadcopter(object):
@@ -46,6 +50,8 @@ class Quadcopter(object):
         [0.0236,   0.,     -0.0236, 0.    ],
         [0.2107,   0.2107,  0.2107, 0.2107]])
         [nx, nu] = Bd.shape
+        self.nx = nx
+        self.nu = nu
 
         # Constraints
         u0 = 10.5916
@@ -66,6 +72,8 @@ class Quadcopter(object):
         # Initial and reference states
         x0 = np.ones(12)
         xr = np.array([0.,0.,1.,0.,0.,0.,0.,0.,0.,0.,0.,0.])
+        self.x0 = x0
+        self.xr = xr
 
         # Prediction horizon
         N = T
@@ -82,6 +90,8 @@ class Quadcopter(object):
         Aeq = sparse.hstack([Ax, Bu])
         leq = np.hstack([-x0, np.zeros(N*nx)])
         ueq = leq
+
+        self.eq_idx_max = leq.shape[0]
         # - input and state constraints
 
         # simplifying to only have input controls
@@ -105,6 +115,33 @@ class Quadcopter(object):
         self.A = A
         self.l = l
         self.u = u
+
+    def solve_given_x0(self, x0=None):
+        if x0 is None:
+            x0 = self.x0
+
+        l_temp = self.l.copy()
+        u_temp = self.u.copy()
+        l_temp[:self.nx] = -x0
+        u_temp[:self.nx] = -x0
+
+        P, q, A = self.P, self.q, self.A
+
+        x = cp.Variable(A.shape[1])
+        obj = .5 * cp.quad_form(x, P) + q.T @ x
+        constraints = [l_temp <= A @ x, A @ x <= u_temp]
+        prob = cp.Problem(cp.Minimize(obj), constraints)
+        res = prob.solve(solver=cp.OSQP)
+
+        log.info(res)
+        log.info(x0)
+        # log.info(x.value)
+        # exit(0)
+
+        return x.value
+
+    def extract_first_control(self, sol):
+        return sol[-self.T * self.nu: -(self.T-1) * self.nu]
 
 
 def main():

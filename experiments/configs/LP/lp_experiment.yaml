@@ -43,7 +43,7 @@ flow:
     supply_lb: 10
     supply_ub: 10
     demand_lb: -7
-    demand_ub: -6.5
+    demand_ub: -5
     capacity_lb: 5
     capacity_ub: 5
 

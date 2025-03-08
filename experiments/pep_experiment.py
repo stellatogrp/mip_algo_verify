@@ -2,9 +2,9 @@ import logging
 import os
 import sys
 
-import FISTA.FISTA as FISTA
+import FISTA.FISTA_pep as FISTA
 import hydra
-import ISTA.ISTA as ISTA
+import ISTA.ISTA_pep as ISTA
 
 # import LP.LP as LP
 import LP.LP_satlin as LP
@@ -15,12 +15,12 @@ log = logging.getLogger(__name__)
 
 @hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
 def main_experiment_fista(cfg):
-    FISTA.run(cfg)
+    FISTA.pep(cfg)
 
 
 @hydra.main(version_base='1.2', config_path='configs/ISTA', config_name='ista_experiment.yaml')
 def main_experiment_ista(cfg):
-    ISTA.run(cfg)
+    ISTA.pep(cfg)
 
 
 @hydra.main(version_base='1.2', config_path='configs/LP', config_name='lp_experiment.yaml')
@@ -38,13 +38,12 @@ def main_experiment_mpc(cfg):
 
 
 base_dir_map = {
-    'LP': 'LP/outputs',
-    'MPC': 'MPC/outputs',
-    'NNQP': 'NNQP/outputs',
-    'ISTA': 'ISTA/outputs',
-    'ISTA_scratch': 'ISTA_scratch/outputs',
-    'FISTA': 'FISTA/outputs',
-    'Portfolio': 'Portfolio/outputs',
+    'LP': 'LP/pep_outputs',
+    'MPC': 'MPC/pep_outputs',
+    # 'NNQP': 'NNQP/outputs',
+    'ISTA': 'ISTA/pep_outputs',
+    'FISTA': 'FISTA/pep_outputs',
+    # 'Portfolio': 'Portfolio/outputs',
 }
 
 

@@ -1,0 +1,37 @@
+T: 10
+rho: 1
+sigma: 1e-4
+
+K_min: 1
+K_max: 50
+relax_cutoff: 10
+relax_cutoff_time: 3600
+
+pnorm: inf
+obj_scaling:
+  val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
+  default: 1e-3
+warmstart: False
+
+theory_bounds: True
+postprocessing: True
+opt_based_tightening: True
+
+mipgap: 0.05
+mipfocus: 3
+timelimit: 7200
+huchette_cuts: True
+
+samples:
+  z_seed_offset: 100
+  x_seed_offset: 101
+  N: 1000
+  sim_N: 100
+  sim_T: 5
+  init_dist_N: 100
+  out_fname: sample_resids.csv
+  max_out_fname: max_sample_resids.csv
+
+pep:
+  resid_fname: pep_resids.csv
+  time_fname: pep_times.csv

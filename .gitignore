@@ -24,6 +24,7 @@
 # large_scale_perf_verify.pdf
 *.pdf
 ipco_plots/
+siopt_plots/
 
 ## Bibliography auxiliary files (bibtex/biblatex/biber):
 *.bbl
