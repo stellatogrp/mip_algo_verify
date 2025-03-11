@@ -219,7 +219,7 @@ def main():
     plt.ylabel('residual')
     plt.xlabel(r'$K$')
     plt.legend()
-    # plt.show()
+    plt.show()
     # plt.savefig('osqp_version.pdf')
 
     plt.cla()
@@ -262,7 +262,7 @@ def main():
     plt.ylabel('residual')
     plt.xlabel(r'$K$')
     plt.legend()
-    # plt.show()
+    plt.show()
     # plt.savefig('fixed_pt_version.pdf')
 
 
