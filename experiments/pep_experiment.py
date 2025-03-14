@@ -7,7 +7,7 @@ import hydra
 import ISTA.ISTA_pep as ISTA
 
 # import LP.LP as LP
-import LP.LP_satlin as LP
+import LP.LP_pep as LP
 import MPC.MPC as MPC
 
 log = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def main_experiment_lp(cfg):
     #     LP_incr.run(cfg)
     # else:
     #     LP.run(cfg)
-    LP.run(cfg)
+    LP.pep(cfg)
 
 
 @hydra.main(version_base='1.2', config_path='configs/MPC', config_name='mpc_experiment.yaml')

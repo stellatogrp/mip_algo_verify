@@ -3,7 +3,7 @@ n: 14
 rng_seed: 0
 stepsize: .1
 rel_stepsize: 0.5
-momentum: False
+momentum: True
 beta_func: nesterov
 
 u0:
@@ -59,7 +59,7 @@ timelimit: 7200
 mipfocus: 0
 
 K_min: 1
-K_max: 50
+K_max: 70
 pnorm: inf
 obj_scaling:
   val: adaptive  # either a default value or 'adaptive' to be 1/(opt obj at K-1)
