@@ -1,5 +1,9 @@
+nx: 12
+nu: 4
 T: 10
+rho_type: scalar
 rho: 1
+rho_eq_scalar: 10
 sigma: 1e-4
 
 K_min: 1

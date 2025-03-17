@@ -240,10 +240,10 @@ def main():
         xkplus1 = np.linalg.solve(lhs_mat, sigma * xk - q + rho * A.T @ (2 * wkplus1 - vk))
         vkplus1 = vk + A @ xkplus1 - wkplus1
 
-        xv_stack = np.hstack([xkplus1 - xk, zkplus1 - zk])
+        xv_stack = np.hstack([xkplus1 - xk, vkplus1 - vk])
         xv_fp_resids.append(np.max(np.abs(xv_stack)))
         xv_l2_fp_resids.append(np.linalg.norm(xv_stack))
-        xv_rhosigma_resids.append(np.sqrt(sigma * np.linalg.norm(xkplus1 - xk) ** 2 + rho * np.linalg.norm(wkplus1 - proj(zk, l, u)) ** 2))
+        xv_rhosigma_resids.append(np.sqrt(sigma * np.linalg.norm(xkplus1 - xk) ** 2 + rho * np.linalg.norm(wkplus1 - proj(vk, l, u)) ** 2))
 
         xk = xkplus1
         vk = vkplus1

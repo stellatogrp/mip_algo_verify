@@ -6,7 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.sparse as spa
-from MPC.quadcopter import Quadcopter
+
+# from MPC.quadcopter import Quadcopter
+from MPC.quadcopter_compact import Quadcopter
 
 from mipalgover.verifier import Verifier
 
@@ -41,7 +43,7 @@ def jax_osqp_fixedpt(K_max, P, q, A, l_rest, u_rest, xinit_samp, z0, v0, rho, si
     zk_all = zk_all.at[0].set(z0)
     vk_all = vk_all.at[0].set(v0)
 
-    lhs_mat = P + sigma * np.eye(n) + rho * A.T @ A
+    lhs_mat = P + sigma * np.eye(n) + A.T @ rho @ A
 
     def body_fun(k, val):
         zk_all, vk_all, resids = val
@@ -49,7 +51,7 @@ def jax_osqp_fixedpt(K_max, P, q, A, l_rest, u_rest, xinit_samp, z0, v0, rho, si
         vk = vk_all[k]
 
         wkplus1 = jax_satlin(vk, l, u)
-        zkplus1 = jnp.linalg.solve(lhs_mat, sigma * zk - q + rho * A.T @ (2 * wkplus1 - vk))
+        zkplus1 = jnp.linalg.solve(lhs_mat, sigma * zk - q + A.T @ rho @ (2 * wkplus1 - vk))
         vkplus1 = vk + A @ zkplus1 - wkplus1
 
         resid = jnp.maximum(jnp.max(jnp.abs(zkplus1 - zk)), jnp.max(jnp.abs(vkplus1 - vk)))
@@ -87,8 +89,10 @@ def samples(cfg, qc, P, q, A, l_rest, u_rest, xinit_l, xinit_u, z0, v0):
     #     return jax_vanilla_PDHG(A_supply, A_demand, b_supply, mu, c, t, z_samples[i], v_samples[i], w_samples[i], x_samples[i], cfg.K_max,
     #         pnorm=cfg.pnorm, momentum=momentum, beta_func=beta_func)
 
+    rho = build_rho(cfg, cfg.nx, P.shape[0])
+
     def osqp_fixedpt_resids(i):
-        return jax_osqp_fixedpt(cfg.K_max, P, q, A, l_rest, u_rest, x_samples[i], z_samples[i], v_samples[i], cfg.rho, cfg.sigma)
+        return jax_osqp_fixedpt(cfg.K_max, P, q, A, l_rest, u_rest, x_samples[i], z_samples[i], v_samples[i], jnp.array(rho.todense()), cfg.sigma)
 
     log.info(x_samples)
 
@@ -103,21 +107,44 @@ def samples(cfg, qc, P, q, A, l_rest, u_rest, xinit_l, xinit_u, z0, v0):
     return max_sample_resids[1:], x_samples
 
 
-def generate_state_box(cfg, qc):
-    pass
+def build_rho(cfg, nx, n):
+    if cfg.rho_type == 'scalar':
+        return cfg.rho * spa.eye(n)
+    else:
+        rho = cfg.rho * np.ones(n)
+        rho[:nx] *= cfg.rho_eq_scalar
+        return spa.diags_array(rho)
 
 
-def osqp_run(cfg, qc, P, q, A, l, u):
+def theory_func(k):
+        # if k == 1:
+        #     return np.inf
+        # return 2 * init_C / np.sqrt((k-1) * (k+2))
+
+        return np.sqrt(9 ** 2 / k + 1)
+
+
+def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     K = cfg.K_max
-    rho, sigma = cfg.rho, cfg.sigma
+    # rho, sigma = cfg.rho, cfg.sigma
+    sigma = cfg.sigma
+    rho = build_rho(cfg, cfg.nx, P.shape[0])
+    log.info(l)
+    log.info(u)
+    log.info(A)
     # xinit_l = qc.x0 - .1
     # xinit_u = qc.x0 + .1
     # log.info(qc.x0)
-    offset = 0.1
-    xinit_l = -qc.x0 - offset
-    xinit_u = -qc.x0 + offset
+    xinit = l[:qc.nx]
+    log.info(xinit)
+    offset = 0.05
+    # xinit_l = -qc.xinit - offset
+    # xinit_u = -qc.xinit + offset
+    xinit_l = xinit - offset
+    xinit_u = xinit + offset
     l_rest = l[qc.nx:]
     u_rest = u[qc.nx:]
+    # n = P.shape[0]
 
     log.info(xinit_l)
     log.info(xinit_u)
@@ -126,20 +153,19 @@ def osqp_run(cfg, qc, P, q, A, l, u):
     log.info(u_rest)
     log.info(u_rest.shape)
 
-    z0 = jnp.zeros(P.shape[0])
+    # z0 = jnp.zeros(P.shape[0])
+    z0 = jnp.array(x_ws)
     v0 = jnp.zeros(A.shape[0])
 
     max_sample_resids, x_samples = samples(cfg, qc, jnp.array(P.todense()), jnp.array(q), jnp.array(A.todense()), jnp.array(l_rest), jnp.array(u_rest), jnp.array(xinit_l), jnp.array(xinit_u), z0, v0)
     log.info(max_sample_resids)
-
-    # exit(0)
 
     gurobi_params = {
         'TimeLimit': cfg.timelimit,
         'MIPGap': cfg.mipgap,
     }
 
-    VP = Verifier(solver_params=gurobi_params, obbt=False)
+    VP = Verifier(solver_params=gurobi_params, obbt=False, theory_func=theory_func)
 
     q_param = VP.add_param(q.shape[0], lb=q, ub=q)
 
@@ -157,10 +183,12 @@ def osqp_run(cfg, qc, P, q, A, l, u):
     # l_param = VP.add_param(A.shape[0], lb=l_l, ub=l_u)
     # u_param = VP.add_param(A.shape[0], lb=u_l, ub=u_u)
 
-    z0 = VP.add_initial_iterate(P.shape[0], lb=0, ub=0)
+    # z0 = VP.add_initial_iterate(P.shape[0], lb=0, ub=0)
+    z0 = VP.add_initial_iterate(P.shape[0], lb=x_ws, ub=x_ws)
     v0 = VP.add_initial_iterate(A.shape[0], lb=0, ub=0)
 
-    lhs_mat = spa.csc_matrix(P + sigma * np.eye(P.shape[0]) + rho * A.T @ A)
+    # lhs_mat = spa.csc_matrix(P + sigma * np.eye(P.shape[0]) + rho * A.T @ A)
+    lhs_mat = spa.csc_matrix(P + sigma * np.eye(P.shape[0]) + A.T @ rho @ A)
     lhs_factored = spa.linalg.factorized(lhs_mat)
     # lhs_mat_inv = np.asarray(np.linalg.inv(lhs_mat.todense()))
 
@@ -176,23 +204,34 @@ def osqp_run(cfg, qc, P, q, A, l, u):
     Delta_bounds = []
     Delta_gaps = []
     times = []
-    # theory_improv_fracs = []
+    theory_improv_fracs = []
     num_bin_vars = []
 
     relax_binary_vars = False
 
-    eq_idx_max = qc.eq_idx_max
+    eq_idx_max = qc.nx
     log.info(eq_idx_max)
 
     for k in range(1, K+1):
         log.info(f'Solving VP at k={k}')
         w[k] = VP.saturated_linear_param_step(v[k-1], l_param, u_param, relax_binary_vars=relax_binary_vars, equality_ranges=[(0, eq_idx_max)])
+
+        # w1 = v[k-1] - l_param
+        # w1_relu = VP.relu_step(w1, proj_ranges=(eq_idx_max, n), relax_binary_vars=relax_binary_vars)
+        # w1_post = w1_relu + l_param
+
+        # w2 = -w1_post + u_param
+        # w2_relu = VP.relu_step(w2, proj_ranges=(eq_idx_max, n), relax_binary_vars=relax_binary_vars)
+        # w[k] = -w2_relu + u_param
+
         # w[k] = VP.saturated_linear_param_step(v[k-1], l_param, u_param, relax_binary_vars=False)
         # w[k] = VP.saturated_linear_step(v[k-1], l_l, u_u, relax_binary_vars=relax_binary_vars)
 
         # sigma * zk - q + rho * A.T @ (2 * wkplus1 - vk)
-        z[k] = VP.implicit_linear_step(lhs_mat.todense(), sigma * z[k-1] - q_param + rho * A.T @ (2 * w[k] - v[k-1]),
+        z[k] = VP.implicit_linear_step(lhs_mat.todense(), sigma * z[k-1] - q_param + A.T @ rho @ (2 * w[k] - v[k-1]),
             lhs_mat_factorization=lhs_factored)
+
+        theory_improv = VP.theory_bound(k, z[k], z[k-1])
         # z[k] = lhs_mat_inv @ (sigma * z[k-1] - q_param + rho * A.T @ (2 * w[k] - v[k-1]))
         v[k] = v[k-1] + A @ z[k] - w[k]
 
@@ -208,6 +247,7 @@ def osqp_run(cfg, qc, P, q, A, l, u):
         Delta_gaps.append(data['MIPGap'])
         times.append(data['Runtime'])
         num_bin_vars.append(data['numBinVars'])
+        theory_improv_fracs.append(theory_improv)
 
         plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times)
 
@@ -215,7 +255,15 @@ def osqp_run(cfg, qc, P, q, A, l, u):
         print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
         print(f'VP residuals: {jnp.array(Deltas)}')
         print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
+        print(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
         print(f'times:{jnp.array(times)}')
+
+    # xinit_vp = VP.extract_sol(xinit_param)
+    # log.info(f'xinit_vp: {xinit_vp}')
+    # _, _, resids = jax_osqp_fixedpt(cfg.K_max, jnp.array(P.todense()), jnp.array(q), jnp.array(A.todense()), jnp.array(l_rest), jnp.array(u_rest), xinit_vp, jnp.zeros(P.shape[0]), jnp.zeros(A.shape[0]), cfg.rho, cfg.sigma)
+    # log.info(resids)
+
+    log.info(VP.extract_sol(z[k]))
 
 
 def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes):
@@ -233,6 +281,9 @@ def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delt
 
     df = pd.DataFrame(num_bin_vars)
     df.to_csv('numBinVars.csv', index=False, header=False)
+
+    df = pd.DataFrame(max_sample_resids)
+    df.to_csv('max_sample_resids.csv', index=False, header=False)
 
     # if cfg.theory_bounds:
     #     df = pd.DataFrame(theory_tighter_fracs)
@@ -281,7 +332,8 @@ def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delt
 
 def mpc_run(cfg):
     qc = Quadcopter(T=cfg.T)
-    P, q, A, l, u = qc.P, qc.q, qc.A, qc.l, qc.u
+    # P, q, A, l, u = qc.P, qc.q, qc.A, qc.l, qc.u
+    P, q, A, l, u, x_test = qc.test_simplified_cvxpy()
 
     log.info(f'P shape: {P.shape}')
     log.info(f'A shape: {A.shape}')
@@ -292,7 +344,7 @@ def mpc_run(cfg):
     # xkplus1 = np.linalg.solve(lhs_mat, sigma * xk - q + rho * A.T @ (2 * wkplus1 - vk))
     # vkplus1 = vk + A @ xkplus1 - wkplus1
 
-    osqp_run(cfg, qc, P, q, A, l, u)
+    osqp_run(cfg, qc, P, q, A, l, u, x_test)
 
 
 def run(cfg):
