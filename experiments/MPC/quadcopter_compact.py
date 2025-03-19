@@ -192,11 +192,78 @@ class Quadcopter(object):
 
         return H, q, M, l, u, X.value
 
+    def test_cvxpy_no_xinit(self):
+        print('----testing with no xinit----')
+        nx, nu = self.nx, self.nu
+        T = self.T
+        A, B = self.A, self.B
+        Q, R = self.Q, self.R
+        xinit = self.xinit
+
+        P_block = spa.kron(spa.eye(T), Q)
+        R_block = spa.kron(spa.eye(T-1), R)
+
+        SX = []
+        for i in range(T):
+            SX.append(spa.linalg.matrix_power(A, i))
+        SX = spa.vstack(SX)
+
+        print('SX shape:', SX.shape)
+
+        SV = spa.csc_matrix(((T-1) * nx, (T-1) * nu))
+        for i in range(T-1):
+            AiB = spa.linalg.matrix_power(A, i) @ B
+            SV += spa.kron(spa.eye(T-1, k=-i), AiB)
+        SV = spa.vstack([spa.csc_matrix((nx, (T-1) * nu)), SV])
+
+        print('SV shape:', SV.shape)
+
+        V1 = cp.Variable((T-1) * nu)
+        q = SV.T @ P_block @ SX @ xinit
+        print(q.shape, V1.shape)
+        obj = cp.Minimize(.5 * cp.quad_form(V1, SV.T @ P_block @ SV + R_block) + q.T @ V1 + .5 * cp.quad_form(xinit, SX.T @ P_block @ SX))
+
+        umin_stack = np.kron(np.ones(T-1), self.umin)
+        umax_stack = np.kron(np.ones(T-1), self.umax)
+        constraints = [
+            # X == SX @ x1 + SV @ V1,
+            # x1 == xinit,
+            umin_stack <= V1, V1 <= umax_stack,
+        ]
+        prob = cp.Problem(obj, constraints)
+        res = prob.solve()
+        print(res)
+        # print('x sol:', X.value)
+        print('V sol:', V1.value)
+
+        print('----testing no xinit simplified----')
+
+        H = SV.T @ P_block @ SV + R_block
+        q = SV.T @ P_block @ SX @ xinit
+        M = spa.eye(V1.shape[0])
+        l = umin_stack
+        u = umax_stack
+
+        x = cp.Variable((T-1) * nu)
+
+        obj = cp.Minimize(.5 * cp.quad_form(x, H) + q.T @ x)
+        constraints = [
+            l <= M @ x, M @ x <= u,
+        ]
+        prob = cp.Problem(obj, constraints)
+        res = prob.solve()
+        print(res)
+        print('x sol:', x.value)
+
+        return H, q, M, l, u, x.value
+
 
 def main():
     qc = Quadcopter(T=10)
     qc.test_with_cvxpy()
     P, q, A, l, u, test_sol = qc.test_simplified_cvxpy()
+    qc.test_cvxpy_no_xinit()
+    exit(0)
     rho = 2
     # rho_inv = 1 / rho
 
@@ -238,9 +305,71 @@ def main():
     print(np.linalg.norm(test_sol))
 
 
+def main_no_xinit():
+    qc = Quadcopter(T=10)
+    P, q, A, l, u, test_sol = qc.test_cvxpy_no_xinit()
+
+    m, n = A.shape
+    sigma = 1e-4
+
+    # rho = 1 * spa.eye(m)
+
+    # xv_fp_resids = []
+    # xv_l2_fp_resids = []
+    # xv_rhosigma_resids = []
+
+    K = 1000
+
+    def main_no_xinit_given_rho(rho=1):
+        xv_fp_resids = []
+        xk = np.zeros(n)
+        vk = np.zeros(m)
+
+        rho = rho * spa.eye(m)
+        # lhs_mat = P + sigma * np.eye(n) + rho * A.T @ A
+        lhs_mat = P + sigma * np.eye(n) + A.T @ rho @ A
+        for _ in range(K):
+            wkplus1 = proj(vk, l, u)
+            # xkplus1 = np.linalg.solve(lhs_mat, sigma * xk - q + rho * A.T @ (2 * wkplus1 - vk))
+            xkplus1 = np.linalg.solve(lhs_mat, sigma * xk - q + A.T @ rho @ (2 * wkplus1 - vk))
+            vkplus1 = vk + A @ xkplus1 - wkplus1
+
+            xv_stack = np.hstack([xkplus1 - xk, vkplus1 - vk])
+            xv_fp_resids.append(np.max(np.abs(xv_stack)))
+            # xv_l2_fp_resids.append(np.linalg.norm(xv_stack))
+            # xv_rhosigma_resids.append(np.sqrt(sigma * np.linalg.norm(xkplus1 - xk) ** 2 + rho * np.linalg.norm(wkplus1 - proj(vk, l, u)) ** 2))
+
+            xk = xkplus1
+            vk = vkplus1
+
+        print(xk)
+        print('norm diff:', np.linalg.norm(xk - test_sol))
+        print('xv resids:', xv_fp_resids)
+
+        return xv_fp_resids
+
+    rho1_resids = main_no_xinit_given_rho(rho=1)
+    rho_10_resids = main_no_xinit_given_rho(rho=10)
+    rho_100_resids = main_no_xinit_given_rho(rho=100)
+    plt.figure(figsize=(8, 6))
+    plt.plot(range(1, K+1), rho1_resids, label=r'$\rho$ = 1')
+    plt.plot(range(1, K+1), rho_10_resids, label=r'$\rho$ = 10')
+    plt.plot(range(1, K+1), rho_100_resids, label=r'$\rho$ = 100')
+    # plt.plot(range(1, K+1), xv_l2_fp_resids, label='2 norm')
+    # plt.plot(range(1, K+1), xv_rhosigma_resids)
+    plt.title('Fixed point formulation')
+
+    plt.yscale('log')
+    plt.ylabel('residual')
+    plt.xlabel(r'$K$')
+    plt.legend()
+    plt.show()
+
+
 def proj(v, l, u):
     return np.minimum(np.maximum(v, l), u)
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    main_no_xinit()
