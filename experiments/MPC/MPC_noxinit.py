@@ -236,7 +236,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     log.info(VP.extract_sol(z[k]))
 
 
-def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes):
+def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes, plot=False):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     df.to_csv('resids.csv', index=False, header=False)
 
@@ -258,6 +258,9 @@ def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delt
     # if cfg.theory_bounds:
     #     df = pd.DataFrame(theory_tighter_fracs)
     #     df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
+
+    if not plot:
+        return
 
     # plotting resids so far
     fig, ax = plt.subplots()
