@@ -220,6 +220,8 @@ class Quadcopter(object):
 
         V1 = cp.Variable((T-1) * nu)
         q = SV.T @ P_block @ SX @ xinit
+        self.no_xinit_q_multipler = SV.T @ P_block @ SX
+
         print(q.shape, V1.shape)
         obj = cp.Minimize(.5 * cp.quad_form(V1, SV.T @ P_block @ SV + R_block) + q.T @ V1 + .5 * cp.quad_form(xinit, SX.T @ P_block @ SX))
 
@@ -318,9 +320,10 @@ def main_no_xinit():
     # xv_l2_fp_resids = []
     # xv_rhosigma_resids = []
 
-    K = 1000
+    K = 50
 
     def main_no_xinit_given_rho(rho=1):
+        print(f'--rho={rho}--')
         xv_fp_resids = []
         xk = np.zeros(n)
         vk = np.zeros(m)
@@ -349,12 +352,12 @@ def main_no_xinit():
         return xv_fp_resids
 
     rho1_resids = main_no_xinit_given_rho(rho=1)
-    rho_10_resids = main_no_xinit_given_rho(rho=10)
-    rho_100_resids = main_no_xinit_given_rho(rho=100)
+    rho10_resids = main_no_xinit_given_rho(rho=10)
+    rho100_resids = main_no_xinit_given_rho(rho=100)
     plt.figure(figsize=(8, 6))
     plt.plot(range(1, K+1), rho1_resids, label=r'$\rho$ = 1')
-    plt.plot(range(1, K+1), rho_10_resids, label=r'$\rho$ = 10')
-    plt.plot(range(1, K+1), rho_100_resids, label=r'$\rho$ = 100')
+    plt.plot(range(1, K+1), rho10_resids, label=r'$\rho$ = 10')
+    plt.plot(range(1, K+1), rho100_resids, label=r'$\rho$ = 100')
     # plt.plot(range(1, K+1), xv_l2_fp_resids, label='2 norm')
     # plt.plot(range(1, K+1), xv_rhosigma_resids)
     plt.title('Fixed point formulation')

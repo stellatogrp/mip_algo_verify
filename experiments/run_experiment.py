@@ -8,7 +8,9 @@ import ISTA.ISTA as ISTA
 
 # import LP.LP as LP
 import LP.LP_satlin as LP
-import MPC.MPC as MPC
+
+# import MPC.MPC as MPC
+import MPC.MPC_noxinit as MPC
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +84,9 @@ FISTA_params = [
 ]
 
 MPC_params = [
-
+    ['rho=1'],
+    ['rho=10'],
+    ['rho=100'],
 ]
 
 def main():
