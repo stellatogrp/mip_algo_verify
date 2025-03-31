@@ -257,11 +257,13 @@ class Quadcopter(object):
         print(res)
         print('x sol:', x.value)
 
+        print(np.linalg.norm(x.value))
+
         return H, q, M, l, u, x.value
 
 
 def main():
-    qc = Quadcopter(T=10)
+    qc = Quadcopter(T=5)
     qc.test_with_cvxpy()
     P, q, A, l, u, test_sol = qc.test_simplified_cvxpy()
     qc.test_cvxpy_no_xinit()

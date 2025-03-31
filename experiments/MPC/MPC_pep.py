@@ -11,7 +11,7 @@ import scipy.sparse as spa
 from MPC.quadcopter_compact import Quadcopter
 from PEPit import PEP
 from PEPit.functions import (
-    ConvexFunction,
+    ConvexIndicatorFunction,
     SmoothStronglyConvexFunction,
 )
 from PEPit.primitive_steps import proximal_step
@@ -34,7 +34,8 @@ def single_pep_run(K, r, mu, L):
     alpha = 1
     theta = 1
 
-    func1 = problem.declare_function(ConvexFunction)
+    # func1 = problem.declare_function(ConvexFunction)
+    func1 = problem.declare_function(ConvexIndicatorFunction)
     func2 = problem.declare_function(SmoothStronglyConvexFunction, L=L, mu=mu)
     # func2 = problem.declare_function(SmoothStronglyConvexQuadraticFunction, L=L, mu=mu)
     # func2 = problem.declare_function(ConvexFunction)
@@ -75,7 +76,7 @@ def single_pep_run(K, r, mu, L):
 
 def osqp_pep(cfg, qc, P, q, A, l, u):
     K_max = 50
-    R = 9.001
+    R = 8.31227985242667
 
     P_eigs, _ = spa.linalg.eigs(P)
     P_eigs = np.real(P_eigs)
@@ -86,7 +87,7 @@ def osqp_pep(cfg, qc, P, q, A, l, u):
 
     taus = []
     solvetimes = []
-    for k in range(40, K_max+1):
+    for k in range(1, K_max+1):
         tau, solvetime = single_pep_run(k, R, 1, L / mu)
         log.info(f'K={k}, tau={tau}')
         taus.append(tau)

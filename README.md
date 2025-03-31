@@ -1,1 +1,8 @@
-# Exact algorithm certification for first-order methods via mixed-integer programming
+# Exact Verification of First-Order Methods via Mixed-Integer Linear Programming
+This repository is by [Vinit Ranjan](https://vinitranjan1.github.io/), [Jisun Park](https://jisunp515.github.io/), [Stefano Gualandi](https://mate.unipv.it/gualandi/), [Andrea Lodi](https://tech.cornell.edu/people/andrea-lodi/), and [Bartolomeo Stellato](https://stellato.io/) and contains the Python source code to reproduce experiments in our paper [Exact Verification of First-Order Methods via Mixed-Integer Linear Programming](https://arxiv.org/abs/2412.11330).
+
+# Abstract
+We present exact mixed-integer linear programming formulations for verifying the performance of first-order methods for parametric quadratic optimization. We formulate the verification problem as a mixed-integer linear program where the objective is to maximize the infinity norm of the fixed-point residual after a given number of iterations. Our approach captures a wide range of gradient, projection, proximal iterations through affine or piecewise affine constraints. We derive tight polyhedral convex hull formulations of the constraints representing the algorithm iterations. To improve the scalability, we develop a custom bound tightening technique combining interval propagation, operator theory, and optimization-based bound tightening. Numerical examples, including linear and quadratic programs from network optimization, sparse coding using Lasso, and optimal control, show that our method provides several orders of magnitude reductions in the worst-case fixed-point residuals, closely matching the true worst-case performance.
+
+# Installation
+To install the package, run

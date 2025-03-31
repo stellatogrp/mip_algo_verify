@@ -116,12 +116,9 @@ def build_rho(cfg, nx, n):
         return spa.diags_array(rho)
 
 
-def theory_func(k):
-        # if k == 1:
-        #     return np.inf
-        # return 2 * init_C / np.sqrt((k-1) * (k+2))
-
-        return np.sqrt(9 ** 2 / k + 1)
+# def theory_func(k):
+#     R = 8.31227985242667
+#     return np.sqrt(R ** 2 / k + 1)
 
 
 def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
@@ -129,6 +126,24 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     # rho, sigma = cfg.rho, cfg.sigma
     sigma = cfg.sigma
     rho = build_rho(cfg, cfg.nx, P.shape[0])
+
+    P_eigs, _  = spa.linalg.eigs(P)
+
+    mu = np.min(np.real(P_eigs))
+    L = np.max(np.real(P_eigs))
+
+    alpha = 1 / cfg.rho
+
+    tau = np.maximum(1 / (1 + mu * alpha), alpha * L / (1 + alpha * L))
+
+    log.info(f'mu, L, tau = {mu, L, tau}')
+
+    def theory_func(k):
+        R = 8.31227985242667
+        # return np.sqrt(R ** 2 / k + 1)
+        if k == 1:
+            return np.inf
+        return (1 + tau) * (tau ** (k-1)) * R
 
     # xinit = qc.xinit
     # offset = 0.1
@@ -148,13 +163,16 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     max_sample_resids, x_samples = samples(cfg, qc, jnp.array(P.todense()), jnp.array(B.todense()), jnp.array(A.todense()), jnp.array(l), jnp.array(u), jnp.array(xinit_l), jnp.array(xinit_u), z0, v0)
     log.info(max_sample_resids)
 
+    # df = pd.DataFrame(max_sample_resids)
+    # df.to_csv('max_sample_resids.csv', index=False, header=False)
+
     gurobi_params = {
         'TimeLimit': cfg.timelimit,
         'MIPGap': cfg.mipgap,
         # 'MIPFocus': 3,
     }
 
-    VP = Verifier(solver_params=gurobi_params, obbt=True, theory_func=theory_func)
+    VP = Verifier(solver_params=gurobi_params, obbt=False, theory_func=theory_func)
 
     # q_param = VP.add_param(q.shape[0], lb=q, ub=q)
 
@@ -183,10 +201,10 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     Deltas = []
     rel_LP_sols = []
     Delta_bounds = []
-    Delta_gaps = []
+    # Delta_gaps = []
     times = []
     theory_improv_fracs = []
-    num_bin_vars = []
+    # num_bin_vars = []
 
     relax_binary_vars = False
 
@@ -202,24 +220,24 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
             lhs_mat_factorization=lhs_factored)
         # z[k] = lhs_mat_inv @ (sigma * z[k-1] - B @ xinit_param + A.T @ rho @ (2 * w[k] - v[k-1]))
 
-        # theory_improv = VP.theory_bound(k, z[k], z[k-1])
+        theory_improv = VP.theory_bound(k, z[k], z[k-1])
         v[k] = v[k-1] + A @ z[k] - w[k]
 
         VP.set_infinity_norm_objective([z[k] - z[k-1], v[k] - v[k-1]])
-        VP.solve(huchette_cuts=True, include_rel_LP_sol=False)
+        # VP.solve(huchette_cuts=True, include_rel_LP_sol=False)
 
-        data = VP.extract_solver_data()
-        print(data)
+        # data = VP.extract_solver_data()
+        # print(data)
+        # Deltas.append(data['objVal'])
+        # rel_LP_sols.append(data['rel_LP_sol'])
+        # Delta_bounds.append(data['objBound'])
+        # Delta_gaps.append(data['MIPGap'])
+        # times.append(data['Runtime'])
+        # num_bin_vars.append(data['numBinVars'])
 
-        Deltas.append(data['objVal'])
-        rel_LP_sols.append(data['rel_LP_sol'])
-        Delta_bounds.append(data['objBound'])
-        Delta_gaps.append(data['MIPGap'])
-        times.append(data['Runtime'])
-        num_bin_vars.append(data['numBinVars'])
-        # theory_improv_fracs.append(theory_improv)
+        theory_improv_fracs.append(theory_improv)
 
-        plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times)
+        # plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times)
 
         print(f'samples: {max_sample_resids}')
         print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
@@ -233,7 +251,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     # _, _, resids = jax_osqp_fixedpt(cfg.K_max, jnp.array(P.todense()), jnp.array(q), jnp.array(A.todense()), jnp.array(l_rest), jnp.array(u_rest), xinit_vp, jnp.zeros(P.shape[0]), jnp.zeros(A.shape[0]), cfg.rho, cfg.sigma)
     # log.info(resids)
 
-    log.info(VP.extract_sol(z[k]))
+    # log.info(VP.extract_sol(z[k]))
 
 
 def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes, plot=False):
