@@ -20,6 +20,10 @@ hydra
 ```
 Free academic licenses for individual use can be obtained from the Gurobi website.
 
+## Tutorial
+In the `tutorials/` folder, we provide jupyter notebooks to show the basic structure of our Verification Problem and its setup.
+For example, [here](https://github.com/stellatogrp/mip_algo_verify/blob/main/tutorials/NNLS.ipynb) we provide the verification of proximal gradient descent on a basic constrained least-squares problem.
+
 ### Running experiments
 The main driver for experiments is the [Hydra](https://hydra.cc/docs/intro/) testing framework.
 All parameter configurations are found in the `experiments/configs` folder.
