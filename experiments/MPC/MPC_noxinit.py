@@ -1,5 +1,6 @@
 import logging
 
+import gurobipy as gp
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -67,6 +68,7 @@ def jax_osqp_fixedpt(K_max, P, B, A, l, u, xinit_samp, z0, v0, rho, sigma):
 
     return jax.lax.fori_loop(0, K_max, body_fun, (zk_all, vk_all, resids))
 
+
 def samples(cfg, qc, P, B, A, l_rest, u_rest, xinit_l, xinit_u, z0, v0):
     sample_idx = jnp.arange(cfg.samples.N)
 
@@ -105,6 +107,51 @@ def samples(cfg, qc, P, B, A, l_rest, u_rest, xinit_l, xinit_u, z0, v0):
     df.to_csv(cfg.samples.out_fname, index=False, header=False)
 
     return max_sample_resids[1:], x_samples
+
+
+def max_radius(cfg, qc, P, B, A, l_rest, u_rest, xinit_l, xinit_u, z0, v0):
+    n = z0.shape[0]
+    m = v0.shape[0]
+
+    rho = build_rho(cfg, cfg.nx, P.shape[0])
+    sigma = cfg.sigma
+
+    model = gp.Model()
+
+    bound_M = cfg.star_bound_M
+    # wstar = model.addMVar(m, lb=l_rest, ub=u_rest)
+    zstar = model.addMVar(n, lb=-bound_M, ub=bound_M)
+    vstar = model.addMVar(m, lb=-bound_M, ub=bound_M)
+    x = model.addMVar(xinit_l.shape[0], lb=xinit_l, ub=xinit_u)
+    wstar = A @ zstar
+
+    model.setParam('TimeLimit', cfg.timelimit)
+    model.setParam('MIPGap', cfg.mipgap)
+
+    M = cfg.init_dist_M
+    w_omega1 = model.addMvar(n, vtype=gp.GRB.BINARY)
+    w_omega2 = model.addMVar(n, vtype=gp.GRB.BINARY)
+
+    model.addConstr((P + sigma * np.eye(n) + A.T @ rho @ A) @ zstar == sigma * zstar - B @ x + A.T @ rho @ (2 * wstar - vstar))
+
+    for i in range(m):
+        model.addConstr(wstar[i] <= l_rest[i] + (u_rest[i] - l_rest[i]) * (1 - w_omega1[i]))
+        model.addConstr(wstar[i] >= u_rest[i] - (u_rest[i] - l_rest[i]) * (1 - w_omega2[i]))
+        model.addConstr(wstar[i] <= vstar[i] + M * w_omega1[i])
+        model.addConstr(wstar[i] >= vstar[i] - M * w_omega2[i])
+
+    obj = (zstar - z0) @ (zstar - z0) + (vstar - v0) @ (vstar - v0)
+    model.setObjective(obj, gp.GRB.MAXIMIZE)
+    model.optimize()
+
+    incumbent = np.sqrt(model.objVal)
+    max_rad = np.sqrt(model.objBound)
+
+    log.info(f'run time: {model.Runtime}')
+    log.info(f'incumbent sol: {incumbent}')
+    log.info(f'miqp max radius bound: {max_rad}')
+
+    return incumbent, max_rad
 
 
 def build_rho(cfg, nx, n):

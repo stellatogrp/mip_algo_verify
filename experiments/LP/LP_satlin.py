@@ -1,6 +1,7 @@
 import logging
 
 import cvxpy as cp
+import gurobipy as gp
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -139,6 +140,60 @@ def samples(cfg, A_supply, A_demand, b_supply, mu, t, z0, v0, w0, momentum=False
     df.to_csv(cfg.samples.out_fname, index=False, header=False)
 
     return max_sample_resids[1:]
+
+
+def max_radius(cfg, A_supply, A_demand, b_supply, mu, t, z0, v0, w0):
+    n = mu.shape[0]
+    m1 = v0.shape[0]
+    m2 = w0.shape[0]
+    c = get_capacity_vector(cfg, n)
+    x_l, x_u = get_x_LB_UB(cfg, A_demand)
+
+    model = gp.Model()
+
+    bound_M = cfg.star_bound_M
+    zstar = model.addMVar(n, lb=0, ub=c)
+    vstar = model.addMVar(m1, lb=0, ub=bound_M)
+    wstar = model.addMVar(m2, lb=-bound_M, ub=bound_M)
+    x = model.addMVar(x_l.shape[0], lb=x_l, ub=x_u)
+
+    model.setParam('TimeLimit', cfg.timelimit)
+    model.setParam('MIPGap', cfg.mipgap)
+
+    M = cfg.init_dist_M
+
+    ztilde_star = zstar - t * (mu + A_supply.T @ vstar - A_demand.T @ wstar)
+    vtilde_star = vstar + t * (-b_supply + A_supply @ zstar)
+
+    z_omega1 = model.addMvar(n, vtype=gp.GRB.BINARY)
+    z_omega2 = model.addMVar(n, vtype=gp.GRB.BINARY)
+    v_omega = model.addMVar(m1, vtype=gp.GRB.BINARY)
+    # wtilde_star = w_star + t * (x -)
+    model.addConstr(x == A_demand.T @ zstar)
+
+    for i in range(n):
+        model.addConstr(zstar[i] <= c[i] * (1 - z_omega1[i]))
+        model.addConstr(zstar[i] >= c[i] - c[i] * (1 - z_omega2[i]))
+        model.addConstr(zstar[i] <= ztilde_star[i] + M * z_omega1[i])
+        model.addConstr(zstar[i] >= ztilde_star[i] - M * z_omega2[i])
+
+    for i in range(m1):
+        model.addConstr(vstar[i] >= vtilde_star[i])
+        model.addConstr(vstar[i] <= vtilde_star[i] + M * (1 - v_omega[i]))
+        model.addConstr(vstar[i] <= M * v_omega[i])
+
+    obj = (zstar - z0) @ (zstar - z0) + (vstar - v0) @ (vstar - v0) + (wstar - w0) @ (wstar - w0)
+    model.setObjective(obj, gp.GRB.MAXIMIZE)
+    model.optimize()
+
+    incumbent = np.sqrt(model.objVal)
+    max_rad = np.sqrt(model.objBound)
+
+    log.info(f'run time: {model.Runtime}')
+    log.info(f'incumbent sol: {incumbent}')
+    log.info(f'miqp max radius bound: {max_rad}')
+
+    return incumbent, max_rad
 
 
 def nesterov_beta_func(k):
