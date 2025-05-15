@@ -10,7 +10,8 @@ import pandas as pd
 import scipy.sparse as spa
 from PEPit import PEP
 from PEPit.functions import (
-    ConvexLipschitzFunction,
+    ConvexIndicatorFunction,
+    SmoothConvexLipschitzFunction,
 )
 from PEPit.primitive_steps import proximal_step
 
@@ -99,9 +100,10 @@ def vanilla_pep(K, R, L, t, alpha=1, theta=1):
     problem = PEP()
 
     # func1 = problem.declare_function(ConvexFunction)
-    func1 = problem.declare_function(ConvexLipschitzFunction, M=L)
+    func1 = problem.declare_function(SmoothConvexLipschitzFunction, L=L, M=L)
     # func2 = problem.declare_function(SmoothConvexFunction, L=L)
-    func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
+    # func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
+    func2 = problem.declare_function(ConvexIndicatorFunction)
     # Define the function to optimize as the sum of func1 and func2
     func = func1 + func2
 
@@ -143,12 +145,20 @@ def vanilla_pep(K, R, L, t, alpha=1, theta=1):
 def momentum_pep(K, R, L, t, alpha=1, theta=1):
     problem = PEP()
 
+    # TODO: see if there are fixes here
+
     # func1 = problem.declare_function(ConvexFunction)
-    func1 = problem.declare_function(ConvexLipschitzFunction, M=L)
+    # func1 = problem.declare_function(ConvexLipschitzFunction, M=L)
+    func1 = problem.declare_function(SmoothConvexLipschitzFunction, L=L, M=L)
+
     # func2 = problem.declare_function(SmoothConvexFunction, L=L)
-    func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
+    # func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
+    # func2 = problem.declare_function(SmoothConvexLipschitzFunction, L=L, M=L)
+    func2 = problem.declare_function(ConvexIndicatorFunction)
+
     # Define the function to optimize as the sum of func1 and func2
     func = func1 + func2
+
 
     # Start by defining its unique optimal point xs = x_* and its function value fs = F(x_*)
     xs = func.stationary_point()
@@ -173,7 +183,7 @@ def momentum_pep(K, R, L, t, alpha=1, theta=1):
             u[i + 1] = w[i + 1]
 
     # Set the initial constraint that is the distance between x0 and xs = x_*
-    problem.set_initial_condition((x[0] - xs) ** 2 <= R ** 2)
+    problem.set_initial_condition((x[0] - xs) ** 2 + (w[0] - xs) ** 2 <= R ** 2)
 
     # Set the performance metric to the final distance to the optimum in function values
     # problem.set_performance_metric((func2(y) + fy) - fs)
