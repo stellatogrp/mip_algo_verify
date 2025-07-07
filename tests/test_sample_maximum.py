@@ -2,7 +2,7 @@ import cvxpy as cp
 import numpy as np
 import matplotlib.pyplot as plt
 import time  # Add timing import
-
+ 
 # Make tqdm optional
 try:
     from tqdm import tqdm
