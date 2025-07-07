@@ -1,6 +1,6 @@
 import logging
 
-import numpy as np
+import numpy as np 
 
 from mipalgover.canonicalizers.gurobi_canonicalizer import GurobiCanonicalizer
 from mipalgover.canonicalizers.obbt_handlers import GurobiOBBTHandler
