@@ -17,40 +17,31 @@ np.set_printoptions(precision=5, suppress=True)
 
 
 def test_sample_maximum_proximal_point():
-    """
-    Sample Maximum (SM) methodology for Proximal Point:
-    
-    1. Sample N = 10,000 problems from parameter space X
-    2. Run Proximal Point for k = 1, ..., K iterations on each sample
-    3. Compute maximum l∞-norm of fixed-point residuals across all samples
-    4. Compare with Verifier bounds (theoretical worst-case)
-    
-    The sample maximum should be ≤ verifier bound (lower bound property).
-    """
+  
     print("="*70)
     print("SAMPLE MAXIMUM (SM) vs VERIFIER COMPARISON")
     print("Proximal Point on Quadratic Problems with Box Constraints")
     print("="*70)
     
-    # Problem setup
-    n = 4  # Dimension
-    K = 11  # Number of iterations to test (matching test_proximal_point.py)
-    N = 10000  # Number of samples
-    lambd = 1.0  # Proximal parameter
+    
+    n = 4 
+    K = 11  
+    N = 10000  
+    lambd = 1.0  
     
     np.random.seed(42)
     
-    # Fixed problem structure
+   
     M = np.random.randn(n, n)
-    P = M.T @ M + 0.5 * np.eye(n)  # Fixed P matrix
+    P = M.T @ M + 0.5 * np.eye(n)  
     
-    # Box constraints: 0 ≤ x ≤ 1
+    
     A = np.vstack([np.eye(n), -np.eye(n)])
     b = np.hstack([np.ones(n), np.zeros(n)])
     
-    # Parameter space X: uncertainty in linear cost vector q
+    
     q_center = np.random.randn(n)
-    q_radius = 10  # Uncertainty radius
+    q_radius = 10  
     
     print(f"Problem dimension: n = {n}")
     print(f"Iterations: K = {K}")
@@ -59,22 +50,22 @@ def test_sample_maximum_proximal_point():
     print(f"Parameter space: q ∈ [{q_center - q_radius}, {q_center + q_radius}]")
     print(f"Condition number: {np.linalg.cond(P):.2f}")
     
-    # SAMPLE MAXIMUM COMPUTATION
+   
     print(f"\nRunning Sample Maximum with {N} samples...")
     
-    sample_residuals = []  # Store max residual from each sample
-    all_residuals_by_iteration = [[] for _ in range(K)]  # Store residuals by iteration
+    sample_residuals = []  
+    all_residuals_by_iteration = [[] for _ in range(K)]  
     
     for sample_idx in tqdm(range(N), desc="Sampling"):
-        # Sample random q from parameter space
-        q_sample = q_center + q_radius * (2 * np.random.rand(n) - 1)  # Uniform in [-radius, +radius]
         
-        # Run Proximal Point on this sample
-        x = 0.5 * np.ones(n)  # Start in middle of feasible region
+        q_sample = q_center + q_radius * (2 * np.random.rand(n) - 1)  
+        
+       
+        x = 0.5 * np.ones(n) 
         sample_max_residual = 0.0
         
         for k in range(K):
-            # Solve proximal point subproblem using CVXPY
+           
             z = cp.Variable(n)
             obj = 0.5 * cp.quad_form(z, P) + q_sample.T @ z + \
                   1/(2*lambd) * cp.sum_squares(z - x)
@@ -82,23 +73,22 @@ def test_sample_maximum_proximal_point():
             prob = cp.Problem(cp.Minimize(obj), constraints)
             prob.solve(solver=cp.CLARABEL, verbose=False)
             
-            # Update iterate
+           
             x_prev = x.copy()
             x = z.value
             
-            # Compute fixed-point residual
             residual = np.linalg.norm(x - x_prev, np.inf)
             all_residuals_by_iteration[k].append(residual)
             sample_max_residual = max(sample_max_residual, residual)
         
         sample_residuals.append(sample_max_residual)
     
-    # Compute sample maximum statistics
+  
     sample_maximum = np.max(sample_residuals)
     sample_mean = np.mean(sample_residuals)
     sample_95th = np.percentile(sample_residuals, 95)
     
-    # Compute sample maximum by iteration
+   
     sample_max_by_iteration = [np.max(residuals) for residuals in all_residuals_by_iteration]
     
     print(f"\nSample Maximum Results:")
@@ -106,17 +96,17 @@ def test_sample_maximum_proximal_point():
     print(f"  Sample mean: {sample_mean:.6f}")
     print(f"  Sample 95th percentile: {sample_95th:.6f}")
     
-    # VERIFIER COMPUTATION
+   
     print(f"\nRunning Verifier (theoretical worst-case bounds)...")
     
-    solver_params = {'OutputFlag': 0, 'MIPGap': 0.001}  # 0.1% optimality gap
+    solver_params = {'OutputFlag': 0, 'MIPGap': 0.001}  
     VP = Verifier(solver_params=solver_params)
     
-    # Add parameter with uncertainty
+   
     q_param = VP.add_param(n, lb=q_center - q_radius, ub=q_center + q_radius)
     
-    # Add initial iterate
-    z0 = VP.add_initial_iterate(n, lb=0.5, ub=0.5)  # Start in middle of feasible region
+   
+    z0 = VP.add_initial_iterate(n, lb=0.5, ub=0.5)  
     z = [None for _ in range(K + 1)]
     z[0] = z0
     
@@ -138,7 +128,7 @@ def test_sample_maximum_proximal_point():
     print(f"  Maximum verifier bound: {verifier_maximum:.6f}")
     print(f"  Final iteration bound: {verifier_bounds[-1]:.6f}")
     
-    # COMPARISON AND VALIDATION
+   
     print(f"\n" + "="*50)
     print("COMPARISON:")
     print(f"  Sample Maximum:     {sample_maximum:.6f}")
@@ -146,9 +136,9 @@ def test_sample_maximum_proximal_point():
     print(f"  Gap (Verifier - SM): {verifier_maximum - sample_maximum:.6f}")
     print(f"  Ratio (SM/Verifier): {sample_maximum / verifier_maximum:.3f}")
     
-    # Validation: Sample maximum should be ≤ Verifier bound
+  
     gap_by_iteration = np.array(verifier_bounds) - np.array(sample_max_by_iteration)
-    all_valid = np.all(gap_by_iteration >= -1e-6)  # Allow small numerical tolerance
+    all_valid = np.all(gap_by_iteration >= -1e-6)
     
     print(f"  Valid lower bound: {all_valid}")
     if not all_valid:
@@ -157,10 +147,10 @@ def test_sample_maximum_proximal_point():
     
     print("="*50)
     
-    # PLOTTING
+   
     plt.figure(figsize=(10, 6))
     
-    # Residuals comparison plot
+   
     iterations = range(1, K + 1)
     plt.semilogy(iterations, sample_max_by_iteration, 'b-', label='Sample Maximum', linewidth=2)
     plt.semilogy(iterations, verifier_bounds, 'r--', label='Verifier Bounds', linewidth=2)
@@ -173,7 +163,7 @@ def test_sample_maximum_proximal_point():
     plt.tight_layout()
     plt.show()
     
-    # ASSERTIONS
+   
     assert all_valid, "Sample maximum should be a lower bound on verifier bounds"
     assert sample_maximum <= verifier_maximum + 1e-6, "Overall sample max should be ≤ verifier max"
     
@@ -190,5 +180,5 @@ def test_sample_maximum_proximal_point():
 
 
 if __name__ == "__main__":
-    # Run Proximal Point sample maximum test
+    
     pp_results = test_sample_maximum_proximal_point() 
