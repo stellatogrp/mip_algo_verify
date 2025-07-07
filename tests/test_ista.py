@@ -60,5 +60,5 @@ def test_convergence():
         betak = beta_new
         wk = wnew
 
-    print(xk)
+    print(xk) 
     assert np.linalg.norm(xk - x.value) <= 1e-7

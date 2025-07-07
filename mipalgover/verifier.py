@@ -8,6 +8,8 @@ from mipalgover.steps.affine import AffineStep
 from mipalgover.steps.relu import ReluStep
 from mipalgover.steps.saturated_linear import SaturatedLinearStep
 from mipalgover.steps.soft_threshold import SoftThresholdStep
+from mipalgover.steps.frank_wolfe import FrankWolfeStep
+from mipalgover.steps.proximal_point import ProximalPointStep
 from mipalgover.vector import Vector
 
 log = logging.getLogger(__name__)
@@ -416,6 +418,114 @@ class Verifier(object):
 
         if return_improv_frac:
             return improv_frac
+
+    def frank_wolfe_step(self, rhs_expr, P, q, A, b, alpha, M=None, relax_binary_vars=False):
+   
+        #  output iterate
+        out_iterate = Vector(rhs_expr.get_output_dim())
+        
+        
+        step = FrankWolfeStep(out_iterate, rhs_expr, P, q, A, b, alpha, M, relax_binary_vars)
+        
+        #  bound propagation for input
+        rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
+        step.update_rhs_lb(rhs_lb)
+        step.update_rhs_ub(rhs_ub)
+        
+     
+        
+        n = A.shape[1] 
+        s_lb = np.full(n, -M)  
+        s_ub = np.full(n, M)   
+        
+       # all possible combinations of lower boudns 
+        comb1_lb = (1 - alpha) * rhs_lb + alpha * s_lb
+        comb2_lb = (1 - alpha) * rhs_ub + alpha * s_lb
+        comb1_ub = (1 - alpha) * rhs_lb + alpha * s_ub
+        comb2_ub = (1 - alpha) * rhs_ub + alpha * s_ub
+        
+        out_lb = np.minimum(comb1_lb, comb2_lb)
+        out_ub = np.maximum(comb1_ub, comb2_ub)
+        
+        
+        assert np.all(out_lb <= out_ub), "Inconsistent bounds computed"
+        
+        self.iterates.append(out_iterate)
+        self.lower_bounds[out_iterate] = out_lb
+        self.upper_bounds[out_iterate] = out_ub
+        
+        self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+        
+        self.canonicalizer.add_param_var(step.s)  
+        self.canonicalizer.add_param_var(step.y)  
+        self.canonicalizer.add_param_var(step.w) 
+        
+        self.canonicalizer.add_frank_wolfe_constraints(step)
+        
+        #OBBT handling
+        if self.obbt:
+           
+            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+            
+            # Register aux variables withhandler
+            self.obbt_handler.add_param_var(step.s) 
+            self.obbt_handler.add_param_var(step.y)  
+            self.obbt_handler.add_param_var(step.w)
+    
+            self.obbt_handler.add_frank_wolfe_constraints(step)
+        
+        self.add_step(step)
+        
+        return out_iterate
+
+    def proximal_point_step(self, rhs_expr, P, q, A, b, lambd, M=None, relax_binary_vars=False):
+      
+        out_iterate = Vector(rhs_expr.get_output_dim())
+        
+        step = ProximalPointStep(out_iterate, rhs_expr, P, q, A, b, lambd, M, relax_binary_vars)
+
+        rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
+        step.update_rhs_lb(rhs_lb)
+        step.update_rhs_ub(rhs_ub)
+        
+        n = A.shape[1] 
+      
+        out_lb = np.full(n, -M if M is not None else -1000)  
+        out_ub = np.full(n, M if M is not None else 1000)   
+        
+        # TODO: Could improve bounds using v bounds and constraint analysis
+        
+        
+        assert np.all(out_lb <= out_ub), "Inconsistent bounds computed"
+        
+        # Add iterate to verifier's list and set bounds
+        self.iterates.append(out_iterate)
+        self.lower_bounds[out_iterate] = out_lb
+        self.upper_bounds[out_iterate] = out_ub
+        
+       
+        self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+        
+        
+        self.canonicalizer.add_param_var(step.mu)  
+        self.canonicalizer.add_param_var(step.w)   
+        
+       
+        self.canonicalizer.add_proximal_point_constraints(step)
+        
+       
+        if self.obbt:
+            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
+            
+            self.obbt_handler.add_param_var(step.mu)  
+            self.obbt_handler.add_param_var(step.w)   
+           
+            self.obbt_handler.add_proximal_point_constraints(step)
+        
+        # Add step to verifier's list
+        self.add_step(step)
+        
+        return out_iterate
 
 
 

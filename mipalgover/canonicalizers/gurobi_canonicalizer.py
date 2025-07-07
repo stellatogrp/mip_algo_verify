@@ -163,7 +163,6 @@ class GurobiCanonicalizer(object):
                 if rhs_lb[i] < l[i] and rhs_ub[i] > u[i]:
                     # if step.relax_binary_vars:
                     #     new_w1[i] = self.model.addVar(lb=0., ub=1.)
-                    #     new_w2[i] = self.model.addVar(lb=0., ub=1.)
                     # else:
                     if not step.relax_binary_vars:
                         new_w1[i] = self.model.addVar(vtype=gp.GRB.BINARY)
@@ -601,14 +600,37 @@ class GurobiCanonicalizer(object):
             if kwargs['include_rel_LP_sol']:
                 rel_model = self.model_to_opt.relax()
                 rel_model.optimize()
-                self.rel_LP_sol = rel_model.objVal
-                # print('relaxed LP sol:', self.rel_LP_sol)
+                if rel_model.status == gp.GRB.OPTIMAL:
+                    self.rel_LP_sol = rel_model.objVal
+                else:
+                    self.rel_LP_sol = None
             else:
                 self.rel_LP_sol = None
         else:
             self.rel_LP_sol = None
+            
         self.model_to_opt.optimize()
-        return self.model_to_opt.objVal
+        
+        # Check optimization status
+        if self.model_to_opt.status == gp.GRB.OPTIMAL:
+            return self.model_to_opt.objVal
+        elif self.model_to_opt.status == gp.GRB.INFEASIBLE:
+            print("\nModel is infeasible. Computing IIS to find conflicting constraints...")
+            self.model_to_opt.computeIIS()
+            print("\nThe following constraints and bounds are involved in the infeasibility:")
+            for c in self.model_to_opt.getConstrs():
+                if c.IISConstr:
+                    print(f"Constraint {c.ConstrName}: {c.Sense} {c.RHS}")
+            for v in self.model_to_opt.getVars():
+                if v.IISLB:
+                    print(f"Lower bound on {v.VarName}: {v.LB}")
+                if v.IISUB:
+                    print(f"Upper bound on {v.VarName}: {v.UB}")
+            raise ValueError("Model is infeasible - see IIS analysis above")
+        elif self.model_to_opt.status == gp.GRB.UNBOUNDED:
+            raise ValueError("Model is unbounded") 
+        else:
+            raise ValueError(f"Optimization failed with status {self.model_to_opt.status}")
 
     def add_huchette_cuts(self, steps, lower_bounds, upper_bounds, **kwargs):
         print('adding huchette cuts')
@@ -740,3 +762,126 @@ class GurobiCanonicalizer(object):
             'rel_LP_sol': self.rel_LP_sol,
             'numBinVars': model.NumBinVars,
         }
+
+    def add_frank_wolfe_constraints(self, step):
+       
+        lhs = step.lhs_expr  # x^(k+1)
+        rhs = step.rhs_expr  # x^k
+        s = step.s         
+        y = step.y          # dual var
+        w = step.w         
+        
+        A = step.A
+        b = step.b
+        
+        lhs_gp_expr = self.lin_expr_to_gp_expr(lhs)
+        rhs_gp_expr = self.lin_expr_to_gp_expr(rhs)
+        s_gp_expr = self.vector_var_map[s]
+        y_gp_expr = self.vector_var_map[y]
+        
+        if not step.relax_binary_vars:
+            w_gp_expr = self.model.addMVar(A.shape[0], vtype=gp.GRB.BINARY)
+        else:
+            w_gp_expr = self.model.addMVar(A.shape[0], lb=0, ub=1)
+        self.vector_var_map[w] = w_gp_expr
+        
+        out_constraints = []
+        
+        # Primal feasibility: As ≤ b
+        out_constraints.append(self.model.addConstr(A @ s_gp_expr <= b))
+        
+        P_xk = step.P @ rhs_gp_expr  
+        q_expr = self.lin_expr_to_gp_expr(step.q)
+        grad = P_xk + q_expr
+        
+        # Dual feasibility: A^T y = -grad
+       
+        out_constraints.append(self.model.addConstr(A.T @ y_gp_expr == -P_xk - q_expr))
+        # Dual feasibility: y ≥ 0
+        out_constraints.append(self.model.addConstr(y_gp_expr >= 0))
+        
+       
+        M = step.M
+        if M is None:   
+            grad_bound = np.max(np.abs(step.P)) * np.max(np.abs(rhs_gp_expr)) + np.max(np.abs(q_expr))
+            M = 2 * grad_bound  # Safe upper bound
+        
+        #  comp slackness
+        for i in range(A.shape[0]):
+            
+            slack_i = b[i] - sum(A[i,j] * s_gp_expr[j] for j in range(A.shape[1]))
+            out_constraints.append(self.model.addConstr(slack_i <= M * (1 - w_gp_expr[i])))  # If w_i = 1, slack_i = 0
+            out_constraints.append(self.model.addConstr(y_gp_expr[i] <= M * w_gp_expr[i]))   # If w_i = 0, y_i = 0
+        
+        # actual frank wolfe update step
+        alpha = step.alpha
+        for i in range(lhs_gp_expr.shape[0]):
+            out_constraints.append(
+                self.model.addConstr(
+                    lhs_gp_expr[i] == (1 - alpha) * rhs_gp_expr[i] + alpha * s_gp_expr[i]
+                )
+            )
+        
+        self.step_constr_map[step] = out_constraints
+        self.model.update()
+
+    def add_proximal_point_constraints(self, step):
+       
+        lhs = step.lhs_expr 
+        rhs = step.rhs_expr 
+        mu = step.mu        
+        w = step.w          
+        
+       
+        A = step.A
+        b = step.b
+        P = step.P
+        lambd = step.lambd
+        
+       
+        lhs_gp_expr = self.lin_expr_to_gp_expr(lhs) 
+        rhs_gp_expr = self.lin_expr_to_gp_expr(rhs) 
+        q_gp_expr = self.lin_expr_to_gp_expr(step.q) 
+        mu_gp_expr = self.vector_var_map[mu]
+        
+       
+        if not step.relax_binary_vars:
+            w_gp_expr = self.model.addMVar(A.shape[0], vtype=gp.GRB.BINARY)
+        else:
+            w_gp_expr = self.model.addMVar(A.shape[0], lb=0, ub=1)
+        self.vector_var_map[w] = w_gp_expr
+        
+        out_constraints = []
+        
+        #  stationarity
+        n = lhs_gp_expr.shape[0]
+        rhs_stationarity = (1.0/lambd) * rhs_gp_expr - q_gp_expr
+        
+       
+        P_plus_prox = P + (1.0/lambd) * np.eye(n)
+        lhs_stationarity = P_plus_prox @ lhs_gp_expr + A.T @ mu_gp_expr
+        
+        out_constraints.append(
+            self.model.addConstr(lhs_stationarity == rhs_stationarity)
+        )
+        
+        #  primal feasibility
+        out_constraints.append(self.model.addConstr(A @ lhs_gp_expr <= b))
+        
+        #  dual feasibility
+        out_constraints.append(self.model.addConstr(mu_gp_expr >= 0))
+        
+        #  comp slackness
+        M = step.M
+        if M is None:
+           
+            M = 1000.0  
+        
+        for i in range(A.shape[0]):
+           
+            constraint_value_i = sum(A[i,j] * lhs_gp_expr[j] for j in range(n)) - b[i]
+            out_constraints.append(self.model.addConstr(constraint_value_i <= M * (1 - w_gp_expr[i])))  #  w_i = 1, slack_i = 0
+            out_constraints.append(self.model.addConstr(mu_gp_expr[i] <= M * w_gp_expr[i]))   # if w_i = 0, y_i = 0
+        
+        self.step_constr_map[step] = out_constraints
+        self.model.update()
