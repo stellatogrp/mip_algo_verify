@@ -1,6 +1,7 @@
 import logging
 
-import numpy as np 
+import numpy as np
+import gurobipy as gp
 
 from mipalgover.canonicalizers.gurobi_canonicalizer import GurobiCanonicalizer
 from mipalgover.canonicalizers.obbt_handlers import GurobiOBBTHandler
@@ -8,9 +9,8 @@ from mipalgover.steps.affine import AffineStep
 from mipalgover.steps.relu import ReluStep
 from mipalgover.steps.saturated_linear import SaturatedLinearStep
 from mipalgover.steps.soft_threshold import SoftThresholdStep
-from mipalgover.steps.frank_wolfe import FrankWolfeStep
-from mipalgover.steps.proximal_point import ProximalPointStep
 from mipalgover.vector import Vector
+from mipalgover.steps.linpro import LinProStep
 
 log = logging.getLogger(__name__)
 
@@ -330,6 +330,102 @@ class Verifier(object):
 
         return out_iterate
 
+    def linpro_step(self, c, A, b, M=None, N=None, relax_binary_vars=False, show_bounds=False):
+        
+
+        m, n = A.shape
+
+        # If b is a list/tuple of expressions convert to object array so that
+        # len(b) works but arithmetic with numpy is not invoked.
+        if not isinstance(b, np.ndarray):
+            b_obj = np.asarray(b, dtype=object)
+        else:
+            b_obj = b
+
+        if show_bounds:
+            print("[VP] Computing M and N bounds for linpro_step ...")
+
+        x_expr = Vector(n)
+        self.iterates.append(x_expr)
+
+        loose = 20  # wide but finite so interval arithmetic works
+        x_lb = -loose * np.ones(n)
+        x_ub =  loose * np.ones(n)
+        self.lower_bounds[x_expr] = x_lb
+        self.upper_bounds[x_expr] = x_ub
+        self.canonicalizer.add_iterate_var(x_expr, lb=x_lb, ub=x_ub)
+        if self.obbt:
+            self.obbt_handler.add_iterate_var(x_expr, lb=x_lb, ub=x_ub)
+
+        
+        if relax_binary_vars:
+            M_vec = np.zeros(m)
+            N_vec = np.zeros(m)
+        else:
+            
+            if M is None:
+                M_vec = np.zeros(m)
+                # only possible when b is numeric
+                assert isinstance(b, np.ndarray), "Need numeric b to derive M automatically"
+                for i in range(m):
+                    row = A[i]
+                    pos = np.clip(row, 0, None)
+                    neg = np.clip(row, None, 0)
+                    row_min = pos @ x_lb + neg @ x_ub
+                    M_vec[i] = max(b[i] - row_min, 0.0)
+            else:
+                M_vec = np.full(m, M) if np.isscalar(M) else np.asarray(M).flatten()
+
+            if show_bounds:
+                print("[VP]   M bounds:", M_vec)
+
+            
+            if N is None:
+                N_vec = 1.0 * M_vec
+            else:
+                N_vec = np.full(m, N) if np.isscalar(N) else np.asarray(N).flatten()
+
+            if show_bounds:
+                print("[VP]   initial N bounds:", N_vec)
+
+        
+        step = LinProStep(x_expr, c, A, b, M_vec, N_vec,
+                          relax_binary_vars=relax_binary_vars)
+        self.canonicalizer.add_linpro_constraints(step)
+        if self.obbt:
+            self.obbt_handler.add_linpro_constraints(step)
+
+        
+        try:
+            if not relax_binary_vars:
+                y_var = self.canonicalizer.dual_var_map[step]
+                new_N = np.zeros_like(N_vec)
+                base_model = self.canonicalizer.model
+                for i in range(m):
+                    tmp = base_model.copy()
+                    tmp.setObjective(y_var[i], gp.GRB.MAXIMIZE)
+                    tmp.optimize()
+                    if tmp.status == gp.GRB.OPTIMAL:
+                        new_N[i] = tmp.ObjVal
+                    else:
+                        new_N[i] = N_vec[i]
+                    tmp.dispose()
+                
+                step.N = new_N
+                if show_bounds:
+                    print("[VP]   tightened N bounds:", new_N)
+                self.canonicalizer.update_dual_bounds(y_var, new_N)
+                
+        except Exception as e:
+            
+            pass
+
+        self.add_step(step)
+        if show_bounds:
+            print("[VP] Done linpro_step bounds\n")
+
+        return x_expr
+
     def add_constraint_set(self, constraint_set):
         self.constraint_sets.append(constraint_set)
 
@@ -418,114 +514,6 @@ class Verifier(object):
 
         if return_improv_frac:
             return improv_frac
-
-    def frank_wolfe_step(self, rhs_expr, P, q, A, b, alpha, M=None, relax_binary_vars=False):
-   
-        #  output iterate
-        out_iterate = Vector(rhs_expr.get_output_dim())
-        
-        
-        step = FrankWolfeStep(out_iterate, rhs_expr, P, q, A, b, alpha, M, relax_binary_vars)
-        
-        #  bound propagation for input
-        rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
-        step.update_rhs_lb(rhs_lb)
-        step.update_rhs_ub(rhs_ub)
-        
-     
-        
-        n = A.shape[1] 
-        s_lb = np.full(n, -M)  
-        s_ub = np.full(n, M)   
-        
-       # all possible combinations of lower boudns 
-        comb1_lb = (1 - alpha) * rhs_lb + alpha * s_lb
-        comb2_lb = (1 - alpha) * rhs_ub + alpha * s_lb
-        comb1_ub = (1 - alpha) * rhs_lb + alpha * s_ub
-        comb2_ub = (1 - alpha) * rhs_ub + alpha * s_ub
-        
-        out_lb = np.minimum(comb1_lb, comb2_lb)
-        out_ub = np.maximum(comb1_ub, comb2_ub)
-        
-        
-        assert np.all(out_lb <= out_ub), "Inconsistent bounds computed"
-        
-        self.iterates.append(out_iterate)
-        self.lower_bounds[out_iterate] = out_lb
-        self.upper_bounds[out_iterate] = out_ub
-        
-        self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
-        
-        self.canonicalizer.add_param_var(step.s)  
-        self.canonicalizer.add_param_var(step.y)  
-        self.canonicalizer.add_param_var(step.w) 
-        
-        self.canonicalizer.add_frank_wolfe_constraints(step)
-        
-        #OBBT handling
-        if self.obbt:
-           
-            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
-            
-            # Register aux variables withhandler
-            self.obbt_handler.add_param_var(step.s) 
-            self.obbt_handler.add_param_var(step.y)  
-            self.obbt_handler.add_param_var(step.w)
-    
-            self.obbt_handler.add_frank_wolfe_constraints(step)
-        
-        self.add_step(step)
-        
-        return out_iterate
-
-    def proximal_point_step(self, rhs_expr, P, q, A, b, lambd, M=None, relax_binary_vars=False):
-      
-        out_iterate = Vector(rhs_expr.get_output_dim())
-        
-        step = ProximalPointStep(out_iterate, rhs_expr, P, q, A, b, lambd, M, relax_binary_vars)
-
-        rhs_lb, rhs_ub = self.linear_bound_prop(rhs_expr)
-        step.update_rhs_lb(rhs_lb)
-        step.update_rhs_ub(rhs_ub)
-        
-        n = A.shape[1] 
-      
-        out_lb = np.full(n, -M if M is not None else -1000)  
-        out_ub = np.full(n, M if M is not None else 1000)   
-        
-        # TODO: Could improve bounds using v bounds and constraint analysis
-        
-        
-        assert np.all(out_lb <= out_ub), "Inconsistent bounds computed"
-        
-        # Add iterate to verifier's list and set bounds
-        self.iterates.append(out_iterate)
-        self.lower_bounds[out_iterate] = out_lb
-        self.upper_bounds[out_iterate] = out_ub
-        
-       
-        self.canonicalizer.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
-        
-        
-        self.canonicalizer.add_param_var(step.mu)  
-        self.canonicalizer.add_param_var(step.w)   
-        
-       
-        self.canonicalizer.add_proximal_point_constraints(step)
-        
-       
-        if self.obbt:
-            self.obbt_handler.add_iterate_var(out_iterate, lb=out_lb, ub=out_ub)
-            
-            self.obbt_handler.add_param_var(step.mu)  
-            self.obbt_handler.add_param_var(step.w)   
-           
-            self.obbt_handler.add_proximal_point_constraints(step)
-        
-        # Add step to verifier's list
-        self.add_step(step)
-        
-        return out_iterate
 
 
 

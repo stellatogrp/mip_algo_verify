@@ -18,6 +18,8 @@ class GurobiOBBTHandler(object):
         #     self.model.setParam(key, val)
 
         self.step_constr_map = {}
+        # keep track of dual variables if needed
+        self.dual_var_set = set()
 
     def add_param_var(self, param, lb=-np.inf, ub=np.inf):
         self.vector_var_map[param] = self.model.addMVar(param.n, lb=lb, ub=ub)
@@ -288,134 +290,50 @@ class GurobiOBBTHandler(object):
         self.step_constr_map[step] = out_constraints
         self.model.update()
 
-    def add_frank_wolfe_constraints(self, step):
-        """Add Frank-Wolfe step constraints to the OBBT model."""
-        # Get expressions for variables
-        lhs = step.lhs_expr  # x^(k+1)
-        rhs = step.rhs_expr  # x^k
-        s = step.s          # vertex
-        y = step.y          # dual variables
-        w = step.w          # binary variables
+
+    def add_linpro_constraints(self, step):
+        """
+        Add constraints for linear programming KKT conditions to OBBT handler:
+        min c^T x
+        s.t. Ax <= b
+
+        For OBBT, we only need the primal-dual feasibility constraints:
+        - A^T y + c = 0 (dual feasibility)
+        - y >= 0 (dual feasibility)
+        - Ax <= b (primal feasibility)
+        """
+        x_expr = step.lhs_expr
+        x_gp_expr = self.lin_expr_to_gp_expr(x_expr)
+        c_gp_expr = self.lin_expr_to_gp_expr(step.c)
         
-        # Convert numpy arrays to Gurobi-friendly format
-        A = step.A
-        b = step.b
+        # Get dimensions
+        m = step.b.shape[0]  # number of constraints
         
-        # Convert to Gurobi expressions
-        lhs_gp_expr = self.lin_expr_to_gp_expr(lhs)
-        rhs_gp_expr = self.lin_expr_to_gp_expr(rhs)
-        s_gp_expr = self.vector_var_map[s]
-        y_gp_expr = self.vector_var_map[y]
-        
-        # Create binary variables with proper type - for OBBT we use continuous relaxation
-        w_gp_expr = self.model.addMVar(A.shape[0], lb=0, ub=1)
-        self.vector_var_map[w] = w_gp_expr
+        # Create dual variables y
+        y = self.model.addMVar(m, lb=0)  # y >= 0
         
         out_constraints = []
         
-        # Primal feasibility: As ≤ b
-        for i in range(A.shape[0]):
-            out_constraints.append(self.model.addConstr(
-                sum(A[i,j] * s_gp_expr[j] for j in range(A.shape[1])) <= b[i]
-            ))
+        # Dual feasibility: A^T y + c = 0
+        out_constraints.append(self.model.addConstr(step.A.T @ y + c_gp_expr == 0))
         
-        # Gradient calculation/dual variables: A^T y = -P x^k - q
-        P_xk = self.lin_expr_to_gp_expr(step.P @ rhs)  # Convert P @ x^k to Gurobi expression
-        q_expr = self.lin_expr_to_gp_expr(step.q)      # Convert q to Gurobi expression
+        # Primal feasibility: A x <= b (b may be expression vector)
+        import numpy as np
+        if isinstance(step.b, np.ndarray) and step.b.dtype != object:
+            out_constraints.append(self.model.addConstr(step.A @ x_gp_expr <= step.b))
+        else:
+            for i in range(m):
+                b_i = step.b[i]
+                if hasattr(b_i, 'get_output_dim'):
+                    b_i_gp = self.lin_expr_to_gp_expr(b_i)[0]
+                else:
+                    b_i_gp = b_i
+                out_constraints.append(self.model.addConstr(step.A[i, :] @ x_gp_expr <= b_i_gp))
         
-        for i in range(A.shape[1]):
-            lhs_sum = sum(A[j,i] * y_gp_expr[j] for j in range(A.shape[0]))
-            out_constraints.append(self.model.addConstr(lhs_sum == -P_xk[i] - q_expr[i]))
-        
-        # Dual feasibility and non-negativity: y ≥ 0
-        out_constraints.append(self.model.addConstr(y_gp_expr >= 0))
-        
-        # Big-M formulation: y ≤ M w
-        
-        
-        # Complementarity conditions
-        for i in range(A.shape[0]):
-            slack_i = b[i] - sum(A[i,j] * s_gp_expr[j] for j in range(A.shape[1]))
-            out_constraints.append(self.model.addConstr(-slack_i <= step.M * (1 - w_gp_expr[i])))
-            out_constraints.append(self.model.addConstr(slack_i <= step.M * (1 - w_gp_expr[i])))
-            out_constraints.append(self.model.addConstr(y_gp_expr[i] <= step.M * w_gp_expr[i]))
-        
-        # Frank-Wolfe update: x^(k+1) = (1-α)x^k + αs
-        for i in range(lhs_gp_expr.shape[0]):
-            out_constraints.append(
-                self.model.addConstr(
-                    lhs_gp_expr[i] == (1 - step.alpha) * rhs_gp_expr[i] + step.alpha * s_gp_expr[i]
-                )
-            )
-        
-        # Store constraints
         self.step_constr_map[step] = out_constraints
         self.model.update()
 
-    def add_proximal_point_constraints(self, step):
-        """Add Proximal Point step constraints to the OBBT model.
-        
-        Same KKT system as main canonicalizer but for OBBT bound propagation.
-        """
-        # Get expressions for variables
-        lhs = step.lhs_expr  # z (output)
-        rhs = step.rhs_expr  # x^k (for bound propagation)
-        mu = step.mu        # dual variables μ
-        w = step.w          # binary variables for complementarity
-        
-        # Convert numpy arrays to Gurobi-friendly format
-        A = step.A
-        b = step.b
-        P = step.P
-        lambd = step.lambd
-        
-        # Convert to Gurobi expressions
-        lhs_gp_expr = self.lin_expr_to_gp_expr(lhs)  # z
-        rhs_gp_expr = self.lin_expr_to_gp_expr(rhs)  # x^k (used in proximal term)
-        q_gp_expr = self.lin_expr_to_gp_expr(step.q) # linear cost q
-        mu_gp_expr = self.vector_var_map[mu]
-        
-        # For OBBT, use continuous relaxation of binary variables
-        w_gp_expr = self.model.addMVar(A.shape[0], lb=0, ub=1)
-        self.vector_var_map[w] = w_gp_expr
-        
-        out_constraints = []
-        
-        # 1. STATIONARITY: (P + (1/λ)I)z + A^T μ = (1/λ)rhs_expr - q
-        n = lhs_gp_expr.shape[0]
-        rhs_stationarity = (1.0/lambd) * rhs_gp_expr - q_gp_expr
-        
-        # Matrix form: (P + (1/λ)I) @ z + A.T @ μ = rhs_stationarity
-        P_plus_prox = P + (1.0/lambd) * np.eye(n)
-        lhs_stationarity = P_plus_prox @ lhs_gp_expr + A.T @ mu_gp_expr
-        
-        out_constraints.append(
-            self.model.addConstr(lhs_stationarity == rhs_stationarity)
-        )
-        
-        # 2. PRIMAL FEASIBILITY: Az ≤ b
-        for i in range(A.shape[0]):
-            out_constraints.append(self.model.addConstr(
-                sum(A[i,j] * lhs_gp_expr[j] for j in range(n)) <= b[i]
-            ))
-        
-        # 3. DUAL FEASIBILITY: μ ≥ 0
-        out_constraints.append(self.model.addConstr(mu_gp_expr >= 0))
-        
-        # 4. COMPLEMENTARY SLACKNESS (Big-M relaxation)
-        M = step.M
-        if M is None:
-            M = 1000.0  # Conservative default for OBBT
-        
-        for i in range(A.shape[0]):
-            # Constraint value: (Az - b)_i
-            constraint_value_i = sum(A[i,j] * lhs_gp_expr[j] for j in range(n)) - b[i]
-            
-            
-            out_constraints.append(self.model.addConstr(constraint_value_i >= -M * (1 - w_gp_expr[i])))  # Ensure slack is nonnegative
-            out_constraints.append(self.model.addConstr(constraint_value_i<= M * (1 - w_gp_expr[i])))  # If w_i = 1, slack_i = 0
-            out_constraints.append(self.model.addConstr(mu_gp_expr[i] <= M * w_gp_expr[i]))   # If w_i = 0, y_i = 0
-        
-        # Store constraints
-        self.step_constr_map[step] = out_constraints
+    # expose helper similar to canonicalizer
+    def update_dual_bounds(self, y_var, new_ub):
+        y_var.ub = new_ub
         self.model.update()
