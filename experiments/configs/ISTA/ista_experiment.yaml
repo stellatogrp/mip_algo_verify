@@ -16,7 +16,7 @@ x_star:
   rng_seed: 1
   nonzero_prob: 0.1
   num: 100
-  epsilon_std: 1e-2
+  epsilon_std: 1e0
   A_mask_prob: 0.2
 
 # problem_type: 'random'

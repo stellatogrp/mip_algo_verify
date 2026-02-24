@@ -32,6 +32,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     At = np.asarray(At)
     Bt = np.asarray(Bt)
     lambda_t = lambd * t
+    t_inv = float(1 / t)
 
     K_max = cfg.K_max
 
@@ -91,8 +92,12 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
-        VP.set_infinity_norm_objective(z[k] - z[k-1])
-        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=False)
+        if k == 1:
+            VP.set_infinity_norm_objective(t_inv * (z[k] - z[k-1]))
+        else:
+            # VP.set_infinity_norm_objective(t_inv * (z[k] - w[k]))
+            VP.set_infinity_norm_objective(t_inv * (z[k] - z[k-1]))
+        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
 
         data = VP.extract_solver_data()
         log.info(data)

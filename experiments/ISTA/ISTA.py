@@ -54,8 +54,9 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     def theory_func(k):
         if k == 1:
             return np.inf
-        return 2 * init_C / np.sqrt((k-1) * (k+2))
-        # return np.inf
+        out = 2 * init_C / np.sqrt((k-1) * (k+2))
+        # log.info(f'theory rhs: {out}')
+        return out
 
     VP = Verifier(solver_params=gurobi_params, theory_func=theory_func)
 
@@ -74,6 +75,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     num_bin_vars = []
 
     relax_binary_vars = False
+    t_inv = float(1 / t)
 
     for k in range(1, K_max+1):
         log.info(f'Solving VP at k={k}')
@@ -81,8 +83,9 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         z[k] = VP.soft_threshold_step(At @ z[k-1] + Bt @ x_param, lambda_t, relax_binary_vars=relax_binary_vars)
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
-        VP.set_infinity_norm_objective(z[k] - z[k-1])
-        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=False)
+        # VP.set_infinity_norm_objective(z[k] - z[k-1])
+        VP.set_infinity_norm_objective(t_inv * (z[k] - z[k-1]))
+        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
 
         data = VP.extract_solver_data()
         log.info(data)
@@ -100,7 +103,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             relax_binary_vars = True
 
         if cfg.postprocessing:
-            postprocess_improv = VP.post_process(z[k], z[0], np.sum(Deltas), return_improv_frac=True)
+            postprocess_improv = VP.post_process(z[k], z[0], 1 / t_inv * np.sum(Deltas), return_improv_frac=True)
             log.info(f'postprocess improv: {postprocess_improv}')
 
         plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars)
