@@ -84,7 +84,7 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
         # VP.set_infinity_norm_objective(z[k] - z[k-1])
-        VP.set_infinity_norm_objective(t_inv * (z[k] - z[k-1]))
+        VP.set_infinity_norm_objective(t_inv * At @ (z[k] - z[k-1]))
         VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
 
         data = VP.extract_solver_data()
@@ -246,7 +246,7 @@ def soft_threshold(x, gamma):
     return jnp.sign(x) * jax.nn.relu(jnp.abs(x) - gamma)
 
 
-def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
+def ISTA_alg(At, Bt, z0, x, t, lambda_t, K, pnorm=1):
     n = At.shape[0]
     # yk_all = jnp.zeros((K+1, n))
     zk_all = jnp.zeros((K+1, n))
@@ -262,9 +262,9 @@ def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
         zkplus1 = soft_threshold(ykplus1, lambda_t)
 
         if pnorm == 'inf':
-            resid = jnp.max(jnp.abs(zkplus1 - zk))
+            resid = 1 / t * jnp.max(jnp.abs(At @ (zkplus1 - zk)))
         else:
-            resid = jnp.linalg.norm(zkplus1 - zk, ord=pnorm)
+            resid = 1 / t * jnp.linalg.norm(At @ (zkplus1 - zk), ord=pnorm)
 
         zk_all = zk_all.at[k+1].set(zkplus1)
         resids = resids.at[k+1].set(resid)
@@ -294,7 +294,7 @@ def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     x_samples = jax.vmap(x_sample)(sample_idx)
 
     def ista_resids(i):
-        return ISTA_alg(At, Bt, z_samples[i], x_samples[i], lambda_t, cfg.K_max, pnorm=cfg.pnorm)
+        return ISTA_alg(At, Bt, z_samples[i], x_samples[i], t, lambda_t, cfg.K_max, pnorm=cfg.pnorm)
 
     _, sample_resids = jax.vmap(ista_resids)(sample_idx)
     log.info(sample_resids)
@@ -333,7 +333,7 @@ def samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u):
 
         x_samples_k = jax.vmap(x_sample)(sample_idx)
         def ista_resids(i):
-            return ISTA_alg(At, Bt, z_samples[i], x_samples_k[i], lambda_t, k, pnorm=cfg.pnorm)
+            return ISTA_alg(At, Bt, z_samples[i], x_samples_k[i], t, lambda_t, k, pnorm=cfg.pnorm)
 
         _, sample_resids = jax.vmap(ista_resids)(sample_idx)
         log.info(sample_resids)
