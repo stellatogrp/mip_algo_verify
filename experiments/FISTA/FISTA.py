@@ -46,6 +46,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         'MIPGap': cfg.mipgap,
         # 'OutputFlag': False,
         # 'NumericFocus': 3,
+        'MIPFocus': 3,
     }
 
     init_C = init_dist(cfg, A, t, lambd, c_z, x_l, x_u, C_norm=cfg.C_norm)
