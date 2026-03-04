@@ -84,9 +84,9 @@ FISTA_params = [
 ]
 
 MPC_params = [
+    ['rho=0.1'],
     ['rho=1'],
     ['rho=10'],
-    ['rho=100'],
 ]
 
 def main():
