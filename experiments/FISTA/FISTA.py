@@ -80,6 +80,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     times = []
     theory_improv_fracs = []
     num_bin_vars = []
+    maximizer_l2_norms = []
 
     relax_binary_vars = False
 
@@ -92,15 +93,35 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
 
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
+        # def k_zero_branch():
+        #     r = (1 / t) * At @ (zkplus1 - zk)
+        #     # Pad with zeros to match the 2n shape of the other branch
+        #     return jnp.concatenate([r, jnp.zeros_like(r)])
+
+        # def k_gt_zero_branch():
+        #     beta_kminus1 = beta_all[k-1] # Fixed bug: was beta_k[k-1]
+        #     zkminus1 = zk_all[k-1]
+        #     return (1 / t) * jnp.concatenate([
+        #         At @ (zkplus1 - zk), 
+        #         (beta_kminus1 - 1) / beta_k * At @ (zk - zkminus1)
+        #     ])
+
         if k == 1:
-            VP.set_infinity_norm_objective(t_inv * (z[k] - z[k-1]))
+            obj = t_inv * At @ (z[k] - z[k-1])
         else:
             # VP.set_infinity_norm_objective(t_inv * (z[k] - w[k]))
-            VP.set_infinity_norm_objective(t_inv * (z[k] - z[k-1]))
+            # VP.set_infinity_norm_objective([
+            #     t_inv * At @ (z[k] - z[k-1]), 
+            #     t_inv * (betas[k-2] - 1) / betas[k-1] * At @ (z[k-1] - z[k-2])
+            # ])
+            obj = t_inv * At @ ( (z[k] - z[k-1]) - (betas[k-2] - 1) / betas[k-1] * (z[k-1] - z[k-2]) )
+
+        VP.set_infinity_norm_objective(obj)
         VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
 
         data = VP.extract_solver_data()
         log.info(data)
+        maximizer = VP.extract_sol(obj)
 
         Deltas.append(data['objVal'])
         rel_LP_sols.append(data['rel_LP_sol'])
@@ -109,6 +130,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         times.append(data['Runtime'])
         num_bin_vars.append(data['numBinVars'])
         theory_improv_fracs.append(theory_improv)
+        maximizer_l2_norms.append(np.linalg.norm(maximizer))
 
         if data['Runtime'] >= cfg.relax_cutoff_time and not relax_binary_vars:
             log.info(f'FLIPPING RELAXATION AT K={k}')
@@ -118,7 +140,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             postprocess_improv = VP.post_process(z[k], z[0], np.sum(Deltas), return_improv_frac=True)
             log.info(f'postprocess improv: {postprocess_improv}')
 
-        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars)
+        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars, maximizer_l2_norms)
 
         log.info(f'samples: {max_sample_resids}')
         log.info(f'rel LP sols: {jnp.array(rel_LP_sols)}')
@@ -126,9 +148,10 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         log.info(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         log.info(f'times:{jnp.array(times)}')
         log.info(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
+        log.info(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
 
 
-def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars):
+def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars, maximizer_l2_norms):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     df.to_csv('resids.csv', index=False, header=False)
 
@@ -148,12 +171,16 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, D
         df = pd.DataFrame(theory_tighter_fracs)
         df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
+    df = pd.DataFrame(maximizer_l2_norms)
+    df.to_csv('maximizer_l2_norms.csv', index=False, header=False)
+
     # plotting resids so far
     fig, ax = plt.subplots()
     ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
-    ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
+    # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
     ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
     ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+    ax.plot(range(1, len(maximizer_l2_norms)+1), maximizer_l2_norms, label='VP sol l2 norms')
 
     ax.set_xlabel(r'$K$')
     ax.set_ylabel('Fixed-point residual')
@@ -194,7 +221,7 @@ def soft_threshold(x, gamma):
     return jnp.sign(x) * jax.nn.relu(jnp.abs(x) - gamma)
 
 
-def FISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
+def FISTA_alg(At, Bt, z0, x, t, lambda_t, K, pnorm=1):
     n = At.shape[0]
     # yk_all = jnp.zeros((K+1, n))
     zk_all = jnp.zeros((K+1, n))
@@ -217,10 +244,25 @@ def FISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
         beta_kplus1 = .5 * (1 + jnp.sqrt(1 + 4 * jnp.power(beta_k, 2)))
         wkplus1 = zkplus1 + (beta_k - 1) / beta_kplus1 * (zkplus1 - zk)
 
+        # --- JAX-Compatible Conditional ---
+        def k_zero_branch():
+            r = (1 / t) * At @ (zkplus1 - zk)
+            # Pad with zeros to match the 2n shape of the other branch
+            # return jnp.concatenate([r, jnp.zeros_like(r)])
+            return r
+
+        def k_gt_zero_branch():
+            beta_kminus1 = beta_all[k-1] # Fixed bug: was beta_k[k-1]
+            zkminus1 = zk_all[k-1]
+            return (1 / t) * At @ ( (zkplus1 - zk) - (beta_kminus1 - 1) / beta_k * (zk - zkminus1) )
+
+        # jax.lax.cond dynamically routes the tracer k
+        resid_vec = jax.lax.cond(k == 0, k_zero_branch, k_gt_zero_branch)
+
         if pnorm == 'inf':
-            resid = jnp.max(jnp.abs(zkplus1 - zk))
+            resid = jnp.max(jnp.abs(resid_vec))
         else:
-            resid = jnp.linalg.norm(zkplus1 - zk, ord=pnorm)
+            resid = jnp.linalg.norm(resid_vec, ord=pnorm)
 
         zk_all = zk_all.at[k+1].set(zkplus1)
         wk_all = wk_all.at[k+1].set(wkplus1)
@@ -253,7 +295,7 @@ def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     x_samples = jax.vmap(x_sample)(sample_idx)
 
     def fista_resids(i):
-        return FISTA_alg(At, Bt, z_samples[i], x_samples[i], lambda_t, cfg.K_max, pnorm=cfg.pnorm)
+        return FISTA_alg(At, Bt, z_samples[i], x_samples[i], t, lambda_t, cfg.K_max, pnorm=cfg.pnorm)
 
     _, _, sample_resids = jax.vmap(fista_resids)(sample_idx)
     log.info(sample_resids)
@@ -292,7 +334,7 @@ def samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u):
 
         x_samples_k = jax.vmap(x_sample)(sample_idx)
         def fista_resids(i):
-            return FISTA_alg(At, Bt, z_samples[i], x_samples_k[i], lambda_t, k, pnorm=cfg.pnorm)
+            return FISTA_alg(At, Bt, z_samples[i], x_samples_k[i], t, lambda_t, k, pnorm=cfg.pnorm)
 
         _, sample_resids = jax.vmap(fista_resids)(sample_idx)
         log.info(sample_resids)
@@ -513,7 +555,9 @@ def sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
 
 def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
     SM_initC, z_samp, x_samp = sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=C_norm)
-    log.info(SM_initC)
+    log.info(f'sample max radius: {SM_initC}')
+
+    # return SM_initC
 
     m, n = A.shape
     model = gp.Model()

@@ -69,18 +69,18 @@ LP_params = [
 ]
 
 ISTA_params = [
-    ['m=25', 'n=20', 'huchette_cuts=True'],
-    ['m=20', 'n=25', 'huchette_cuts=True'],
-    ['m=25', 'n=20', 'huchette_cuts=False'],
-    ['m=20', 'n=25', 'huchette_cuts=False'],
+    ['m=15', 'n=20', 'huchette_cuts=True'],
+    ['m=20', 'n=15', 'huchette_cuts=True'],
+    ['m=15', 'n=20', 'huchette_cuts=False'],
+    ['m=20', 'n=15', 'huchette_cuts=False'],
 ]
 
 # add FISTA params
 FISTA_params = [
-    ['m=25', 'n=20', 'huchette_cuts=True'],
-    ['m=20', 'n=25', 'huchette_cuts=True'],
-    ['m=25', 'n=20', 'huchette_cuts=False'],
-    ['m=20', 'n=25', 'huchette_cuts=False'],
+    ['m=15', 'n=20', 'huchette_cuts=True'],
+    ['m=20', 'n=15', 'huchette_cuts=True'],
+    ['m=15', 'n=20', 'huchette_cuts=False'],
+    ['m=20', 'n=15', 'huchette_cuts=False'],
 ]
 
 MPC_params = [

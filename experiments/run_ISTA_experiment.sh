@@ -2,8 +2,8 @@
 #SBATCH --job-name=ISTA
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=28
-#SBATCH --mem-per-cpu=3G
+#SBATCH --cpus-per-task=20
+#SBATCH --mem-per-cpu=2G
 #SBATCH --time=02-00:59:59
 #SBATCH --array=0-3
 #SBATCH -o /scratch/gpfs/vranjan/mip_algo_verify_out/ISTA/runs/%A.txt
