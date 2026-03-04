@@ -55,7 +55,11 @@ def jax_osqp_fixedpt(K_max, P, B, A, l, u, xinit_samp, z0, v0, rho, sigma):
         zkplus1 = jnp.linalg.solve(lhs_mat, sigma * zk - B @ xinit_samp + A.T @ rho @ (2 * wkplus1 - vk))
         vkplus1 = vk + A @ zkplus1 - wkplus1
 
-        resid = jnp.maximum(jnp.max(jnp.abs(zkplus1 - zk)), jnp.max(jnp.abs(vkplus1 - vk)))
+        # resid = jnp.maximum(jnp.max(jnp.abs(zkplus1 - zk)), jnp.max(jnp.abs(vkplus1 - vk)))
+        resid1 = sigma * (zkplus1 - zk) + A.T @ rho @ (vkplus1 - vk)
+        resid2 = vk - vkplus1
+
+        resid = jnp.maximum(jnp.max(jnp.abs(resid1)), jnp.max(jnp.abs(resid2)))
 
         zk_all = zk_all.at[k+1].set(zkplus1)
         vk_all = vk_all.at[k+1].set(vkplus1)
@@ -248,10 +252,10 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     Deltas = []
     rel_LP_sols = []
     Delta_bounds = []
-    # Delta_gaps = []
+    Delta_gaps = []
     times = []
     theory_improv_fracs = []
-    # num_bin_vars = []
+    num_bin_vars = []
 
     relax_binary_vars = False
 
@@ -270,21 +274,25 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
         v[k] = v[k-1] + A @ z[k] - w[k]
 
-        VP.set_infinity_norm_objective([z[k] - z[k-1], v[k] - v[k-1]])
-        # VP.solve(huchette_cuts=True, include_rel_LP_sol=False)
+        resid1 = sigma * (z[k] - z[k-1]) + A.T @ rho @ (v[k] - v[k-1])
+        resid2 = v[k-1] - v[k]
 
-        # data = VP.extract_solver_data()
-        # print(data)
-        # Deltas.append(data['objVal'])
-        # rel_LP_sols.append(data['rel_LP_sol'])
-        # Delta_bounds.append(data['objBound'])
-        # Delta_gaps.append(data['MIPGap'])
-        # times.append(data['Runtime'])
-        # num_bin_vars.append(data['numBinVars'])
+        # VP.set_infinity_norm_objective([z[k] - z[k-1], v[k] - v[k-1]])
+        VP.set_infinity_norm_objective([resid1, resid2])
+        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
+
+        data = VP.extract_solver_data()
+        print(data)
+        Deltas.append(data['objVal'])
+        rel_LP_sols.append(data['rel_LP_sol'])
+        Delta_bounds.append(data['objBound'])
+        Delta_gaps.append(data['MIPGap'])
+        times.append(data['Runtime'])
+        num_bin_vars.append(data['numBinVars'])
 
         theory_improv_fracs.append(theory_improv)
 
-        # plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times)
+        plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times, plot=True)
 
         print(f'samples: {max_sample_resids}')
         print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
@@ -330,7 +338,7 @@ def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delt
     # plotting resids so far
     fig, ax = plt.subplots()
     ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
-    ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
+    # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
     ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
     ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
 

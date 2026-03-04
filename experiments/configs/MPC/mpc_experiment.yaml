@@ -1,8 +1,8 @@
 nx: 12
 nu: 4
-T: 10
+T: 5
 rho_type: scalar
-rho: 100
+rho: .1
 rho_eq_scalar: 10
 sigma: 1e-4
 
