@@ -46,7 +46,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         'MIPGap': cfg.mipgap,
         # 'OutputFlag': False,
         # 'NumericFocus': 3,
-        'MIPFocus': 3,
+        # 'MIPFocus': 3,
     }
 
     init_C = init_dist(cfg, A, t, lambd, c_z, x_l, x_u, C_norm=cfg.C_norm)
@@ -141,7 +141,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
             postprocess_improv = VP.post_process(z[k], z[0], np.sum(Deltas), return_improv_frac=True)
             log.info(f'postprocess improv: {postprocess_improv}')
 
-        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars, maximizer_l2_norms)
+        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars, maximizer_l2_norms, make_plots=False)
 
         log.info(f'samples: {max_sample_resids}')
         log.info(f'rel LP sols: {jnp.array(rel_LP_sols)}')
@@ -152,7 +152,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         log.info(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
 
 
-def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars, maximizer_l2_norms):
+def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars, maximizer_l2_norms, make_plots=True):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     df.to_csv('resids.csv', index=False, header=False)
 
@@ -175,47 +175,51 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, D
     df = pd.DataFrame(maximizer_l2_norms)
     df.to_csv('maximizer_l2_norms.csv', index=False, header=False)
 
-    # plotting resids so far
-    fig, ax = plt.subplots()
-    ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
-    # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
-    ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
-    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
-    ax.plot(range(1, len(maximizer_l2_norms)+1), maximizer_l2_norms, label='VP sol l2 norms')
+    df = pd.DataFrame(max_sample_resids)
+    df.to_csv('max_sample_resids.csv', index=False, header=False)
 
-    ax.set_xlabel(r'$K$')
-    ax.set_ylabel('Fixed-point residual')
-    ax.set_yscale('log')
-    ax.set_title(rf'FISTA VP, $n={n}$, $m={m}$')
+    if make_plots:
+        # plotting resids so far
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+        # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
+        ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
+        ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+        ax.plot(range(1, len(maximizer_l2_norms)+1), maximizer_l2_norms, label='VP sol l2 norms')
 
-    ax.legend()
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Fixed-point residual')
+        ax.set_yscale('log')
+        ax.set_title(rf'FISTA VP, $n={n}$, $m={m}$')
 
-    plt.tight_layout()
-    plt.savefig('resids.pdf')
+        ax.legend()
 
-    plt.clf()
-    plt.cla()
-    plt.close()
+        plt.tight_layout()
+        plt.savefig('resids.pdf')
 
-    # plotting times so far
+        plt.clf()
+        plt.cla()
+        plt.close()
 
-    fig, ax = plt.subplots()
-    ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
-    # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+        # plotting times so far
 
-    ax.set_xlabel(r'$K$')
-    ax.set_ylabel('Solvetime (s)')
-    ax.set_yscale('log')
-    ax.set_title(rf'ISTA VP, $n={n}$, $m={m}$')
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
+        # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
 
-    ax.legend()
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Solvetime (s)')
+        ax.set_yscale('log')
+        ax.set_title(rf'ISTA VP, $n={n}$, $m={m}$')
 
-    plt.tight_layout()
-    plt.savefig('solvetimes.pdf')
+        ax.legend()
 
-    plt.clf()
-    plt.cla()
-    plt.close()
+        plt.tight_layout()
+        plt.savefig('solvetimes.pdf')
+
+        plt.clf()
+        plt.cla()
+        plt.close()
 
 
 def soft_threshold(x, gamma):

@@ -95,7 +95,7 @@ def main():
         exit(0)
     if sys.argv[2] == 'cluster':
         # raise NotImplementedError
-        base_dir = '/scratch/gpfs/vranjan/mip_algo_verify_out'
+        base_dir = '/scratch/gpfs/BSTELLATO/vranjan/mip_algo_verify_out'
     elif sys.argv[2] == 'local':
         base_dir = '.'
     else:
