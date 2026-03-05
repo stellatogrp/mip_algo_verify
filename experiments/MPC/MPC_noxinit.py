@@ -256,6 +256,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     times = []
     theory_improv_fracs = []
     num_bin_vars = []
+    maximizer_l2_norms = []
 
     relax_binary_vars = False
 
@@ -283,22 +284,28 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
 
         data = VP.extract_solver_data()
         print(data)
+        max1 = VP.extract_sol(resid1)
+        max2 = VP.extract_sol(resid2)
+        obj = np.concatenate([max1, max2])
+
         Deltas.append(data['objVal'])
         rel_LP_sols.append(data['rel_LP_sol'])
         Delta_bounds.append(data['objBound'])
         Delta_gaps.append(data['MIPGap'])
         times.append(data['Runtime'])
         num_bin_vars.append(data['numBinVars'])
+        maximizer_l2_norms.append(np.linalg.norm(obj))
 
         theory_improv_fracs.append(theory_improv)
 
-        plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times, plot=True)
+        plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times, maximizer_l2_norms, plot=True)
 
         print(f'samples: {max_sample_resids}')
         print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
         print(f'VP residuals: {jnp.array(Deltas)}')
         print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         print(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
+        log.info(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
         print(f'times:{jnp.array(times)}')
 
     # xinit_vp = VP.extract_sol(xinit_param)
@@ -309,7 +316,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     # log.info(VP.extract_sol(z[k]))
 
 
-def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes, plot=False):
+def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes, maximizer_l2_norms, plot=False):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     df.to_csv('resids.csv', index=False, header=False)
 
@@ -332,6 +339,9 @@ def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delt
     #     df = pd.DataFrame(theory_tighter_fracs)
     #     df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
+    df = pd.DataFrame(maximizer_l2_norms)
+    df.to_csv('maximizer_l2_norms.csv', index=False, header=False)
+
     if not plot:
         return
 
@@ -341,6 +351,7 @@ def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delt
     # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
     ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
     ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+    ax.plot(range(1, len(maximizer_l2_norms)+1), maximizer_l2_norms, label='VP sol ltwo norms')
 
     ax.set_xlabel(r'$K$')
     ax.set_ylabel('Fixed-point residual')
