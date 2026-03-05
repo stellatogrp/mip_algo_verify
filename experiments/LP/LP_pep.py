@@ -10,7 +10,9 @@ import pandas as pd
 import scipy.sparse as spa
 from PEPit import PEP
 from PEPit.functions import (
+    ConvexFunction,
     ConvexIndicatorFunction,
+    ConvexLipschitzFunction,
     SmoothConvexLipschitzFunction,
 )
 from PEPit.primitive_steps import proximal_step
@@ -55,6 +57,7 @@ def LP_pep(cfg, A_supply, A_demand, mu, z0):
     # momentum = cfg.momentum
     # m, n = A.shape
     # pnorm = cfg.pnorm
+    n = A_supply.shape[1]
     m1 = A_supply.shape[0]
     m2 = A_demand.shape[0]
 
@@ -73,16 +76,30 @@ def LP_pep(cfg, A_supply, A_demand, mu, z0):
     # v0 = jnp.zeros(m1)
     # w0 = jnp.zeros(m2)
 
-    R = 20.698  # use the above functions
+    R = 19.4619  # use the above functions
     # t = .01
+    t_inv = 1 / t
 
     taus = []
     solvetimes = []
     for k in range(1, K+1):
         if not cfg.momentum:
-            tau, solvetime = vanilla_pep(k, R, M, t)
+            H = spa.bmat([
+                [t_inv * spa.eye(n), -A_supply.T, A_demand.T],
+                [-A_supply, t_inv * spa.eye(m1), None],
+                [-A_demand, None, t_inv * spa.eye(m2)]
+            ])
+            H_norm = spa.linalg.norm(H, 2)
+            tau, solvetime = vanilla_pep(k, R, M, t, H_norm)
         else:
-            tau, solvetime = momentum_pep(k, R, M, t)
+            xi = 1 + 2 * (k-1) / (k + 2)
+            H = spa.bmat([
+                [t_inv * spa.eye(n), -A_supply.T, A_demand.T],
+                [-xi * A_supply, t_inv * spa.eye(m1), None],
+                [-xi * A_demand, None, t_inv * spa.eye(m2)]
+            ])
+            H_norm = spa.linalg.norm(H, 2)
+            tau, solvetime = momentum_pep(k, R, M, t, H_norm)
         log.info(f'K={k}, tau={tau}')
         taus.append(tau)
         solvetimes.append(solvetime)
@@ -96,110 +113,145 @@ def LP_pep(cfg, A_supply, A_demand, mu, z0):
         df.to_csv('times.csv', index=False, header=False)
 
 
-def vanilla_pep(K, R, L, t, alpha=1, theta=1):
+def vanilla_pep(K, R, M, t, H_norm, alpha=1, theta=1):
     problem = PEP()
 
-    # func1 = problem.declare_function(ConvexFunction)
-    func1 = problem.declare_function(SmoothConvexLipschitzFunction, L=L, M=L)
-    # func2 = problem.declare_function(SmoothConvexFunction, L=L)
-    # func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
-    func2 = problem.declare_function(ConvexIndicatorFunction)
-    # Define the function to optimize as the sum of func1 and func2
-    func = func1 + func2
-
-    # Start by defining its unique optimal point xs = x_* and its function value fs = F(x_*)
+    # f1 = problem.declare_function(ConvexFunction)
+    f1 = problem.declare_function(SmoothConvexLipschitzFunction, L=M, M=M)
+    h  = problem.declare_function(ConvexIndicatorFunction)
+    func = f1 + h
     xs = func.stationary_point()
-    # fs = func(xs)
 
-    # Then define the starting point x0 of the algorithm and its function value f0
+    gs = func.gradient(xs)
+
+    xs = problem.set_initial_point()
+    ys = problem.set_initial_point()
+    
+    # Enforce these conditions in PEPit
+    # f1.add_point(xs, g=-ys, f=f1.value(xs))
+    # h.add_point(ys, g=xs,  f=h.value(ys))
+    f1.add_point((xs, -M * ys, f1.value(xs)))
+    h.add_point((ys, M * xs, h.value(ys)))
+
+    # 3. Initialize the Algorithm
     x0 = problem.set_initial_point()
+    y0 = problem.set_initial_point()
+    
+    # Constrain initial distance to the saddle point
+    # We use the standard Euclidean norm for simplicity, though PDHG 
+    # is naturally contractive in the norm ||z||_M where M depends on tau/sigma.
+    problem.set_initial_condition((x0 - xs)**2 + (y0 - ys)**2 <= R ** 2)
 
-    # Compute n steps of the Douglas-Rachford splitting starting from x0
-    x = [x0 for _ in range(K)]
-    w = [x0 for _ in range(K + 1)]
-    for i in range(K):
-        x[i], _, _ = proximal_step(w[i], func2, alpha)
-        y, _, fy = proximal_step(2 * x[i] - w[i], func1, alpha)
-        w[i + 1] = w[i] + theta * (y - x[i])
+    x = x0
+    y = y0
 
-    # Set the initial constraint that is the distance between x0 and xs = x_*
-    problem.set_initial_condition((x[0] - xs) ** 2 <= R ** 2)
+    for k in range(K):
+        # --- Primal Step ---
+        # x_{k+1} = prox_{tau f1}(x_k - tau * y_k)
+        x_new, _, _ = proximal_step(x - t * M * y, f1, t)
+        
+        # --- Extrapolation ---
+        # x_bar_{k+1} = x_{k+1} + theta * (x_{k+1} - x_k)
+        x_bar = x_new + theta * (x_new - x)
+        
+        # --- Dual Step ---
+        # y_{k+1} = prox_{sigma f2^*}(y_k + sigma * x_bar)
+        # Note: prox_{sigma f2^*} is exactly prox_{sigma h}
+        y_new, _, _ = proximal_step(y + t * M * x_bar, h, t)
 
-    # Set the performance metric to the final distance to the optimum in function values
-    # problem.set_performance_metric((func2(y) + fy) - fs)
-    if K == 1:
-        # problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
-        problem.set_performance_metric((x[-1] - x0) ** 2 + (w[-1] - x0) ** 2)
-    else:
-        # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
-        problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (w[-1] - w[-2]) ** 2)
+        # Update
+        y_prev = y
+        x_prev = x
 
+        x = x_new
+        y = y_new
+
+    # L_primal_view = f1.value(x) + M * (x * ys) - h.value(ys)
+    # # Term 2: L(xs, y_avg) = f1(xs) + <xs, y_avg> - h(y_avg)
+    # L_dual_view   = f1.value(xs) + M * (xs * y) - h.value(y)
+    # gap = L_primal_view - L_dual_view
+    # problem.set_performance_metric(gap)
+
+    # obj = gs ** 2
+    problem.set_performance_metric((x - x_prev) ** 2 + (y - y_prev) ** 2)
 
     start = time.time()
-    pepit_tau = problem.solve(verbose=1, wrapper='cvxpy')
+    pepit_tau = problem.solve(verbose=1, wrapper='cvxpy', solver='clarabel')
     # pepit_tau = problem.solve(verbose=1, wrapper='mosek')
     end = time.time()
-    return np.sqrt(pepit_tau), end - start
+    return H_norm * np.sqrt(pepit_tau), end - start
 
 
-def momentum_pep(K, R, L, t, alpha=1, theta=1):
+def momentum_pep(K, R, M, t, H_norm, alpha=1, theta=1):
     problem = PEP()
 
-    # TODO: see if there are fixes here
-
-    # func1 = problem.declare_function(ConvexFunction)
-    # func1 = problem.declare_function(ConvexLipschitzFunction, M=L)
-    func1 = problem.declare_function(SmoothConvexLipschitzFunction, L=L, M=L)
-
-    # func2 = problem.declare_function(SmoothConvexFunction, L=L)
-    # func2 = problem.declare_function(ConvexLipschitzFunction, M=L)
-    # func2 = problem.declare_function(SmoothConvexLipschitzFunction, L=L, M=L)
-    func2 = problem.declare_function(ConvexIndicatorFunction)
-
-    # Define the function to optimize as the sum of func1 and func2
-    func = func1 + func2
-
-
-    # Start by defining its unique optimal point xs = x_* and its function value fs = F(x_*)
+    # f1 = problem.declare_function(ConvexFunction)
+    f1 = problem.declare_function(SmoothConvexLipschitzFunction, L=M, M=M)
+    h  = problem.declare_function(ConvexIndicatorFunction)
+    func = f1 + h
     xs = func.stationary_point()
-    # fs = func(xs)
 
-    # Then define the starting point x0 of the algorithm and its function value f0
+    gs = func.gradient(xs)
+
+    xs = problem.set_initial_point()
+    ys = problem.set_initial_point()
+    
+    # Enforce these conditions in PEPit
+    # f1.add_point(xs, g=-ys, f=f1.value(xs))
+    # h.add_point(ys, g=xs,  f=h.value(ys))
+    f1.add_point((xs, -M * ys, f1.value(xs)))
+    h.add_point((ys, M * xs, h.value(ys)))
+
+    # 3. Initialize the Algorithm
     x0 = problem.set_initial_point()
+    y0 = problem.set_initial_point()
+    
+    # Constrain initial distance to the saddle point
+    # We use the standard Euclidean norm for simplicity, though PDHG 
+    # is naturally contractive in the norm ||z||_M where M depends on tau/sigma.
+    problem.set_initial_condition((x0 - xs)**2 + (y0 - ys)**2 <= R ** 2)
 
-    # Compute n steps of the Douglas-Rachford splitting starting from x0
-    x = [x0 for _ in range(K)]
-    w = [x0 for _ in range(K + 1)]
-    u = [x0 for _ in range(K + 1)]
+    x = x0
+    y = y0
 
-    for i in range(K):
-        x[i], _, _ = proximal_step(u[i], func2, alpha)
-        y, _, fy = proximal_step(2 * x[i] - w[i], func1, alpha)
-        w[i + 1] = w[i] + theta * (y - x[i])
+    for k in range(K):
+        # --- Primal Step ---
+        # x_{k+1} = prox_{tau f1}(x_k - tau * y_k)
+        x_new, _, _ = proximal_step(x - t * M * y, f1, t)
 
-        if i >= 1:
-            u[i + 1] = w[i + 1] + (i - 1) / (i + 2) * (w[i + 1] - w[i])
-        else:
-            u[i + 1] = w[i + 1]
+        if k >= 1:
+            x_new = x_new + (k-1) / (k+2) * (x_new - x)
+        
+        # --- Extrapolation ---
+        # x_bar_{k+1} = x_{k+1} + theta * (x_{k+1} - x_k)
+        x_bar = x_new + theta * (x_new - x)
+        
+        # --- Dual Step ---
+        # y_{k+1} = prox_{sigma f2^*}(y_k + sigma * x_bar)
+        # Note: prox_{sigma f2^*} is exactly prox_{sigma h}
+        y_new, _, _ = proximal_step(y + t * M * x_bar, h, t)
 
-    # Set the initial constraint that is the distance between x0 and xs = x_*
-    problem.set_initial_condition((x[0] - xs) ** 2 + (w[0] - xs) ** 2 <= R ** 2)
+        # Update
+        y_prev = y
+        x_prev = x
 
-    # Set the performance metric to the final distance to the optimum in function values
-    # problem.set_performance_metric((func2(y) + fy) - fs)
-    if K == 1:
-        # problem.set_performance_metric((x[-1] - x0) ** 2 + (y[-1] - y0) ** 2)
-        problem.set_performance_metric((x[-1] - x0) ** 2 + (w[-1] - x0) ** 2)
-    else:
-        # problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (y[-1] - y[-2]) ** 2)
-        problem.set_performance_metric((x[-1] - x[-2]) ** 2 + (w[-1] - w[-2]) ** 2)
+        x = x_new
+        y = y_new
 
+    # L_primal_view = f1.value(x) + M * (x * ys) - h.value(ys)
+    # # Term 2: L(xs, y_avg) = f1(xs) + <xs, y_avg> - h(y_avg)
+    # L_dual_view   = f1.value(xs) + M * (xs * y) - h.value(y)
+    # gap = L_primal_view - L_dual_view
+    # problem.set_performance_metric(gap)
+
+    # obj = gs ** 2
+    problem.set_performance_metric((x - x_prev) ** 2 + (y - y_prev) ** 2)
 
     start = time.time()
-    pepit_tau = problem.solve(verbose=1, wrapper='cvxpy')
+    pepit_tau = problem.solve(verbose=1, wrapper='cvxpy', solver='clarabel')
     # pepit_tau = problem.solve(verbose=1, wrapper='mosek')
     end = time.time()
-    return np.sqrt(pepit_tau), end - start
+    return H_norm * np.sqrt(pepit_tau), end - start
 
 
 def mincostflow_LP_run(cfg):
