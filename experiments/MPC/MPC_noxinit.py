@@ -305,7 +305,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
         print(f'VP residuals: {jnp.array(Deltas)}')
         print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         print(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
-        log.info(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
+        print(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
         print(f'times:{jnp.array(times)}')
 
     # xinit_vp = VP.extract_sol(xinit_param)

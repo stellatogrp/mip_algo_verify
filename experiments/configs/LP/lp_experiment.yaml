@@ -3,7 +3,7 @@ n: 14
 rng_seed: 0
 stepsize: .1
 rel_stepsize: 0.5
-momentum: True
+momentum: False
 beta_func: nesterov
 
 u0:
@@ -43,14 +43,14 @@ flow:
     supply_lb: 10
     supply_ub: 10
     demand_lb: -7
-    demand_ub: -5
+    demand_ub: -6.5
     capacity_lb: 5
     capacity_ub: 5
 
 basic_bounding: False  # True = basic interval prop only, False = LP based bounding
 incremental: True
 theory_bounds: True
-postprocessing: True
+postprocessing: False
 opt_based_tightening: True
 num_obbt_iter: 1
 
