@@ -62,10 +62,10 @@ func_driver_map = {
 
 
 LP_params = [
-    ['momentum=False', 'K_max=50', 'huchette_cuts=True'],
-    ['momentum=True', 'K_max=50', 'huchette_cuts=True'],
-    ['momentum=False', 'K_max=50', 'huchette_cuts=False'],
-    ['momentum=True', 'K_max=50', 'huchette_cuts=False'],
+    ['momentum=False', 'K_max=70', 'huchette_cuts=True'],
+    ['momentum=True', 'K_max=70', 'huchette_cuts=True'],
+    ['momentum=False', 'K_max=70', 'huchette_cuts=False'],
+    ['momentum=True', 'K_max=70', 'huchette_cuts=False'],
 ]
 
 ISTA_params = [

@@ -202,7 +202,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     # xinit_u = xinit + offset
 
     xinit_l = np.array([0., 0., 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
-    xinit_u = np.array([np.pi/6,np.pi/6, 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
+    xinit_u = np.array([np.pi/12,np.pi/12, 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
 
     # z0 = jnp.zeros(P.shape[0])
     z0 = jnp.array(x_ws)
@@ -298,7 +298,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
 
         theory_improv_fracs.append(theory_improv)
 
-        plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times, maximizer_l2_norms, plot=True)
+        plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times, maximizer_l2_norms, plot=False)
 
         print(f'samples: {max_sample_resids}')
         print(f'rel LP sols: {jnp.array(rel_LP_sols)}')

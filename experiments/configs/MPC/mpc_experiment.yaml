@@ -1,6 +1,6 @@
 nx: 12
 nu: 4
-T: 5
+T: 4
 rho_type: scalar
 rho: 1
 rho_eq_scalar: 10
