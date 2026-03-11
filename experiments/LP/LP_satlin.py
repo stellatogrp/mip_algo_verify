@@ -76,7 +76,7 @@ def jax_vanilla_PDHG(A_supply, A_demand, b_supply, mu, c, t, z0, v0, w0, x, K_ma
         else:
             term2 = -A_supply @ zdiff + t_inv * vdiff
             term3 = A_demand @ zdiff + t_inv * wdiff
-        
+
         if pnorm == 'inf':
             resid = jnp.maximum(jnp.max(jnp.abs(term1)), jnp.max(jnp.abs(term2)))
             resid = jnp.maximum(resid, jnp.max(jnp.abs(term3)))

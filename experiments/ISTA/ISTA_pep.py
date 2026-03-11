@@ -1,7 +1,6 @@
 import logging
 import time
 
-import cvxpy as cp
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -11,7 +10,6 @@ from PEPit import PEP
 from PEPit.functions import (
     ConvexLipschitzFunction,
     SmoothStronglyConvexFunction,
-    SmoothStronglyConvexQuadraticFunction,
 )
 from PEPit.primitive_steps import proximal_step
 

@@ -10,9 +10,7 @@ import pandas as pd
 import scipy.sparse as spa
 from PEPit import PEP
 from PEPit.functions import (
-    ConvexFunction,
     ConvexIndicatorFunction,
-    ConvexLipschitzFunction,
     SmoothConvexLipschitzFunction,
 )
 from PEPit.primitive_steps import proximal_step
@@ -122,11 +120,11 @@ def vanilla_pep(K, R, M, t, H_norm, alpha=1, theta=1):
     func = f1 + h
     xs = func.stationary_point()
 
-    gs = func.gradient(xs)
+    # gs = func.gradient(xs)
 
     xs = problem.set_initial_point()
     ys = problem.set_initial_point()
-    
+
     # Enforce these conditions in PEPit
     # f1.add_point(xs, g=-ys, f=f1.value(xs))
     # h.add_point(ys, g=xs,  f=h.value(ys))
@@ -136,9 +134,9 @@ def vanilla_pep(K, R, M, t, H_norm, alpha=1, theta=1):
     # 3. Initialize the Algorithm
     x0 = problem.set_initial_point()
     y0 = problem.set_initial_point()
-    
+
     # Constrain initial distance to the saddle point
-    # We use the standard Euclidean norm for simplicity, though PDHG 
+    # We use the standard Euclidean norm for simplicity, though PDHG
     # is naturally contractive in the norm ||z||_M where M depends on tau/sigma.
     problem.set_initial_condition((x0 - xs)**2 + (y0 - ys)**2 <= R ** 2)
 
@@ -149,11 +147,11 @@ def vanilla_pep(K, R, M, t, H_norm, alpha=1, theta=1):
         # --- Primal Step ---
         # x_{k+1} = prox_{tau f1}(x_k - tau * y_k)
         x_new, _, _ = proximal_step(x - t * M * y, f1, t)
-        
+
         # --- Extrapolation ---
         # x_bar_{k+1} = x_{k+1} + theta * (x_{k+1} - x_k)
         x_bar = x_new + theta * (x_new - x)
-        
+
         # --- Dual Step ---
         # y_{k+1} = prox_{sigma f2^*}(y_k + sigma * x_bar)
         # Note: prox_{sigma f2^*} is exactly prox_{sigma h}
@@ -191,11 +189,11 @@ def momentum_pep(K, R, M, t, H_norm, alpha=1, theta=1):
     func = f1 + h
     xs = func.stationary_point()
 
-    gs = func.gradient(xs)
+    # gs = func.gradient(xs)
 
     xs = problem.set_initial_point()
     ys = problem.set_initial_point()
-    
+
     # Enforce these conditions in PEPit
     # f1.add_point(xs, g=-ys, f=f1.value(xs))
     # h.add_point(ys, g=xs,  f=h.value(ys))
@@ -205,9 +203,9 @@ def momentum_pep(K, R, M, t, H_norm, alpha=1, theta=1):
     # 3. Initialize the Algorithm
     x0 = problem.set_initial_point()
     y0 = problem.set_initial_point()
-    
+
     # Constrain initial distance to the saddle point
-    # We use the standard Euclidean norm for simplicity, though PDHG 
+    # We use the standard Euclidean norm for simplicity, though PDHG
     # is naturally contractive in the norm ||z||_M where M depends on tau/sigma.
     problem.set_initial_condition((x0 - xs)**2 + (y0 - ys)**2 <= R ** 2)
 
@@ -221,11 +219,11 @@ def momentum_pep(K, R, M, t, H_norm, alpha=1, theta=1):
 
         if k >= 1:
             x_new = x_new + (k-1) / (k+2) * (x_new - x)
-        
+
         # --- Extrapolation ---
         # x_bar_{k+1} = x_{k+1} + theta * (x_{k+1} - x_k)
         x_bar = x_new + theta * (x_new - x)
-        
+
         # --- Dual Step ---
         # y_{k+1} = prox_{sigma f2^*}(y_k + sigma * x_bar)
         # Note: prox_{sigma f2^*} is exactly prox_{sigma h}

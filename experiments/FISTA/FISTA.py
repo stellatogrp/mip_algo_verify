@@ -103,7 +103,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         #     beta_kminus1 = beta_all[k-1] # Fixed bug: was beta_k[k-1]
         #     zkminus1 = zk_all[k-1]
         #     return (1 / t) * jnp.concatenate([
-        #         At @ (zkplus1 - zk), 
+        #         At @ (zkplus1 - zk),
         #         (beta_kminus1 - 1) / beta_k * At @ (zk - zkminus1)
         #     ])
 
@@ -112,7 +112,7 @@ def FISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         else:
             # VP.set_infinity_norm_objective(t_inv * (z[k] - w[k]))
             # VP.set_infinity_norm_objective([
-            #     t_inv * At @ (z[k] - z[k-1]), 
+            #     t_inv * At @ (z[k] - z[k-1]),
             #     t_inv * (betas[k-2] - 1) / betas[k-1] * At @ (z[k-1] - z[k-2])
             # ])
             obj = t_inv * At @ ( (z[k] - z[k-1]) - (betas[k-2] - 1) / betas[k-1] * (z[k-1] - z[k-2]) )
