@@ -27,7 +27,7 @@ plt.rcParams.update({
     "figure.figsize": (9, 6)})
 
 
-def solve_pep(K, R, mu, L, t, lambd, verbose=1):
+def solve_pep(K, R, mu, L, t, lambd, H_norm, verbose=1):
     K_max = K
     beta = jnp.ones(K_max + 1)
     gamma = jnp.zeros(K_max + 1)
@@ -36,7 +36,6 @@ def solve_pep(K, R, mu, L, t, lambd, verbose=1):
         gamma = gamma.at[k].set((beta[k-1] - 1) / beta[k])
 
     gamma = np.asarray(gamma)
-
 
     problem = PEP()
     f = problem.declare_function(SmoothStronglyConvexFunction, L=L, mu=mu)
@@ -70,19 +69,20 @@ def solve_pep(K, R, mu, L, t, lambd, verbose=1):
     #     pepit_tau = problem.solve(verbose=pepit_verbose, wrapper='mosek')
     # except AssertionError:
     #     pepit_tau = problem.objective.eval()
-    pepit_tau = problem.solve(verbose=pepit_verbose, wrapper='cvxpy', solver=cp.MOSEK)
+    pepit_tau = problem.solve(verbose=pepit_verbose, wrapper='cvxpy', solver='clarabel')
     # pepit_tau = problem.solve(verbose=pepit_verbose, wrapper='mosek')
     end = time.time()
 
-    return np.sqrt(pepit_tau), end - start
+    return H_norm * np.sqrt(pepit_tau), end - start
 
 
 def nonstrong_cvx_pep(cfg):
-    R = 1.2122623789160232
-    L = 3.93935
+    R = 34.608072156
+    L = 3.70248
     mu = 0.
-    lambd = 0.1
-    t = 0.12692437657292238
+    lambd = 0.05
+    t = 0.1350447081806767
+    H_norm = 7.40495509577
 
     K_max = 40
 
@@ -90,7 +90,7 @@ def nonstrong_cvx_pep(cfg):
     times = []
 
     for K in range(1, K_max+1):
-        tau, solvetime = solve_pep(K, R, mu, L, t, lambd)
+        tau, solvetime = solve_pep(K, R, mu, L, t, lambd, H_norm)
         log.info(f'K={K}, tau = {tau}')
 
         taus.append(tau)
@@ -104,11 +104,12 @@ def nonstrong_cvx_pep(cfg):
 
 
 def strong_cvx_pep(cfg):
-    R = 0.7672088326033274
-    L = 2.61212
+    R = 50.25558419254079
+    L = 2.82747
     mu = 0.02123
-    lambd = 0.1
-    t = 0.19141512305277822
+    lambd = 0.05
+    t = 0.17683622357271744
+    H_norm = 5.654949985904822
 
     K_max = 40
 
@@ -116,7 +117,7 @@ def strong_cvx_pep(cfg):
     times = []
 
     for K in range(1, K_max+1):
-        tau, solvetime = solve_pep(K, R, mu, L, t, lambd)
+        tau, solvetime = solve_pep(K, R, mu, L, t, lambd, H_norm)
         log.info(f'K={K}, tau = {tau}')
 
         taus.append(tau)

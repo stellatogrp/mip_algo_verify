@@ -26,6 +26,11 @@ mipfocus: 3
 timelimit: 7200
 huchette_cuts: True
 
+C_norm: 2
+star_bound_M: 1e2
+init_dist_M: 10
+init_dist_time: 60
+
 samples:
   z_seed_offset: 100
   x_seed_offset: 101

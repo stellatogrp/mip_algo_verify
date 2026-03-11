@@ -133,7 +133,7 @@ def max_radius(cfg, qc, P, B, A, l_rest, u_rest, xinit_l, xinit_u, z0, v0):
     model.setParam('MIPGap', cfg.mipgap)
 
     M = cfg.init_dist_M
-    w_omega1 = model.addMvar(n, vtype=gp.GRB.BINARY)
+    w_omega1 = model.addMVar(n, vtype=gp.GRB.BINARY)
     w_omega2 = model.addMVar(n, vtype=gp.GRB.BINARY)
 
     model.addConstr((P + sigma * np.eye(n) + A.T @ rho @ A) @ zstar == sigma * zstar - B @ x + A.T @ rho @ (2 * wstar - vstar))
@@ -189,20 +189,13 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
 
     log.info(f'mu, L, tau = {mu, L, tau}')
 
-    def theory_func(k):
-        R = 8.31227985242667
-        # return np.sqrt(R ** 2 / k + 1)
-        if k == 1:
-            return np.inf
-        return (1 + tau) * (tau ** (k-1)) * R
-
     # xinit = qc.xinit
     # offset = 0.1
     # xinit_l = xinit - offset
     # xinit_u = xinit + offset
 
-    xinit_l = np.array([0., 0., 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
-    xinit_u = np.array([np.pi/12,np.pi/12, 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
+    xinit_l = np.array([-np.pi/6, -np.pi/6, 0., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
+    xinit_u = np.array([np.pi/6,np.pi/6, 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
 
     # z0 = jnp.zeros(P.shape[0])
     z0 = jnp.array(x_ws)
@@ -214,6 +207,15 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     max_sample_resids, x_samples = samples(cfg, qc, jnp.array(P.todense()), jnp.array(B.todense()), jnp.array(A.todense()), jnp.array(l), jnp.array(u), jnp.array(xinit_l), jnp.array(xinit_u), z0, v0)
     log.info(max_sample_resids)
 
+    max_radius(cfg, qc, np.array(P.todense()), np.array(B.todense()), np.array(A.todense()), np.array(l), np.array(u), np.array(xinit_l), np.array(xinit_u), np.array(z0), np.array(v0))
+
+    def theory_func(k):
+        R = 8.31227985242667
+        # return np.sqrt(R ** 2 / k + 1)
+        if k == 1:
+            return np.inf
+        return (1 + tau) * (tau ** (k-1)) * R
+
     # df = pd.DataFrame(max_sample_resids)
     # df.to_csv('max_sample_resids.csv', index=False, header=False)
 
@@ -224,6 +226,14 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     }
 
     VP = Verifier(solver_params=gurobi_params, obbt=False, theory_func=theory_func)
+
+    H = spa.bmat([
+        [-sigma * spa.eye(P.todense().shape[0]), -rho * A.T],
+        [None, spa.eye(A.shape[0])],
+    ])
+    H_norm = spa.linalg.norm(H, 2)
+    log.info(f'H_norm: {H_norm}')
+    exit(0)
 
     # q_param = VP.add_param(q.shape[0], lb=q, ub=q)
 

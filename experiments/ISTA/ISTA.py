@@ -41,6 +41,10 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     log.info(max_idx)
     log.info(f'max sample resids: {max_sample_resids}')
 
+    H_norm = np.linalg.norm(1 / t * jnp.eye(n) - A.T @ A, 2)
+    log.info(H_norm)
+    # exit(0)
+
     gurobi_params = {
         'TimeLimit': cfg.timelimit,
         'MIPGap': cfg.mipgap,

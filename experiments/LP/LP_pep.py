@@ -82,7 +82,7 @@ def LP_pep(cfg, A_supply, A_demand, mu, z0):
 
     taus = []
     solvetimes = []
-    for k in range(1, K+1):
+    for k in range(cfg.K_min, K+1):
         if not cfg.momentum:
             H = spa.bmat([
                 [t_inv * spa.eye(n), -A_supply.T, A_demand.T],
