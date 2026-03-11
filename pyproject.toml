@@ -10,6 +10,7 @@ license = { text = "Apache 2.0" }
 dynamic = ["version"]
 authors = [
        { name = "Vinit Ranjan", email = "vranjan@princeton.edu" },
+       { name = "Jisun Park", email = "jisunpark@princeton.edu" },
        { name = "Stefano Gualandi", email = "stefano.gualandi@unipv.it " },
        { name = "Andrea Lodi", email = "andrea.lodi@cornell.edu" },
        { name = "Bartolomeo Stellato", email = "bstellato@princeton.edu" },

@@ -29,7 +29,7 @@ plt.rcParams.update({
     "figure.figsize": (9, 6)})
 
 
-def single_pep_run(K, r, mu, L):
+def single_pep_run(K, r, mu, L, H_norm):
     problem = PEP()
     alpha = 1
     theta = 1
@@ -71,7 +71,7 @@ def single_pep_run(K, r, mu, L):
     pepit_tau = problem.solve(verbose=1, wrapper='cvxpy', solver=cp.CLARABEL)
     # pepit_tau = problem.solve(verbose=1, wrapper='mosek')
     end = time.time()
-    return np.sqrt(pepit_tau), end - start
+    return H_norm * np.sqrt(pepit_tau), end - start
 
 
 def osqp_pep(cfg, qc, P, q, A, l, u):
@@ -87,8 +87,9 @@ def osqp_pep(cfg, qc, P, q, A, l, u):
 
     taus = []
     solvetimes = []
+    H_norm = 14.14213564
     for k in range(1, K_max+1):
-        tau, solvetime = single_pep_run(k, R, 1, L / mu)
+        tau, solvetime = single_pep_run(k, R, 1, L / mu, H_norm)
         log.info(f'K={k}, tau={tau}')
         taus.append(tau)
         solvetimes.append(solvetime)

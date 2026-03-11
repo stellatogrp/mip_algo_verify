@@ -43,6 +43,8 @@ def jax_vanilla_PDHG(A_supply, A_demand, b_supply, mu, c, t, z0, v0, w0, x, K_ma
     vk_all = vk_all.at[0].set(v0)
     wk_all = wk_all.at[0].set(w0)
 
+    t_inv = 1 / t
+
     def body_fun(k, val):
         zk_all, vk_all, wk_all, resids = val
         zk = zk_all[k]
@@ -58,11 +60,28 @@ def jax_vanilla_PDHG(A_supply, A_demand, b_supply, mu, c, t, z0, v0, w0, x, K_ma
             vkplus1 = jax.nn.relu(vk + t * (-b_supply + A_supply @ (2 * zkplus1 - zk)))
             wkplus1 = wk + t * (x - A_demand @ (2 * zkplus1 - zk))
 
+        zdiff = zkplus1 - zk
+        vdiff = vkplus1 - vk
+        wdiff = wkplus1 - wk
+
+        # if pnorm == 'inf':
+        #     resid = jnp.maximum(jnp.max(jnp.abs(zkplus1 - zk)), jnp.max(jnp.abs(vkplus1 - vk)))
+        #     resid = jnp.maximum(resid, jnp.max(jnp.abs(wkplus1 - wk)))
+        # elif pnorm == 1:
+        #     resid = jnp.linalg.norm(zkplus1 - zk, ord=pnorm) + jnp.linalg.norm(vkplus1 - vk, ord=pnorm) + jnp.linalg.norm(wkplus1 - wk, ord=pnorm)
+        term1 = t_inv * zdiff - A_supply.T @ vdiff + A_demand.T @ wdiff
+        if momentum:
+            term2 = -(1 + 2 * beta_func(k)) * A_supply @ zdiff + t_inv * vdiff
+            term3 = (1 + 2 * beta_func(k)) * A_demand @ zdiff + t_inv * wdiff
+        else:
+            term2 = -A_supply @ zdiff + t_inv * vdiff
+            term3 = A_demand @ zdiff + t_inv * wdiff
+
         if pnorm == 'inf':
-            resid = jnp.maximum(jnp.max(jnp.abs(zkplus1 - zk)), jnp.max(jnp.abs(vkplus1 - vk)))
-            resid = jnp.maximum(resid, jnp.max(jnp.abs(wkplus1 - wk)))
+            resid = jnp.maximum(jnp.max(jnp.abs(term1)), jnp.max(jnp.abs(term2)))
+            resid = jnp.maximum(resid, jnp.max(jnp.abs(term3)))
         elif pnorm == 1:
-            resid = jnp.linalg.norm(zkplus1 - zk, ord=pnorm) + jnp.linalg.norm(vkplus1 - vk, ord=pnorm) + jnp.linalg.norm(wkplus1 - wk, ord=pnorm)
+            resid = jnp.linalg.norm(term1, ord=pnorm) + jnp.linalg.norm(term2, ord=pnorm) + jnp.linalg.norm(term3, ord=pnorm)
 
         zk_all = zk_all.at[k+1].set(zkplus1)
         vk_all = vk_all.at[k+1].set(vkplus1)
@@ -255,6 +274,7 @@ def LP_run(cfg, A_supply, A_demand, mu, z0):
     z[0] = VP.add_initial_iterate(n, lb=z0, ub=z0)
     v[0] = VP.add_initial_iterate(m1, lb=0, ub=0)
     w[0] = VP.add_initial_iterate(m2, lb=0, ub=0)
+    t_inv = 1 / t
 
     Deltas = []
     rel_LP_sols = []
@@ -263,6 +283,7 @@ def LP_run(cfg, A_supply, A_demand, mu, z0):
     times = []
     # theory_improv_fracs = []
     num_bin_vars = []
+    maximizer_l2_norms = []
 
     relax_binary_vars = False
     c = get_capacity_vector(cfg, n)
@@ -280,19 +301,40 @@ def LP_run(cfg, A_supply, A_demand, mu, z0):
             v[k] = VP.relu_step(v[k-1] + t * (neg_b_supply_param + A_supply @ (2 * z[k] - z[k-1])), relax_binary_vars=relax_binary_vars)
             w[k] = w[k-1] + t * (x_param - A_demand @ (2 * z[k] - z[k-1]))
 
-        VP.set_infinity_norm_objective([z[k] - z[k-1], v[k] - v[k-1], w[k] - w[k-1]])
+        # term1 = t_inv * zdiff - A_supply.T @ vdiff + A_demand.T @ wdiff
+        # if momentum:
+        #     term2 = -(1 + 2 * beta_func(k)) * A_supply @ zdiff + t_inv * vdiff
+        #     term3 = (1 + 2 * beta_func(k)) * A_demand @ zdiff + t_inv * wdiff
+        # else:
+        #     term2 = -A_supply @ zdiff + t_inv * vdiff
+        #     term3 = A_demand @ zdiff + t_inv * wdiff
 
+        zdiff = z[k] - z[k-1]
+        vdiff = v[k] - v[k-1]
+        wdiff = w[k] - w[k-1]
+        resid1 = t_inv * zdiff - A_supply.T @ vdiff + A_demand.T @ wdiff
+        if momentum:
+            resid2 = -(1 + 2 * beta_func(k-1)) * A_supply @ zdiff + t_inv * vdiff
+            resid3 = (1 + 2 * beta_func(k-1)) * A_demand @ zdiff + t_inv * wdiff
+        else:
+            resid2 = -A_supply @ zdiff + t_inv * vdiff
+            resid3 = A_demand @ zdiff + t_inv * wdiff
+
+        # VP.set_infinity_norm_objective([z[k] - z[k-1], v[k] - v[k-1], w[k] - w[k-1]])
+        VP.set_infinity_norm_objective([resid1, resid2, resid3])
         VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=False)
 
         data = VP.extract_solver_data()
         print(data)
+        obj = np.concatenate([VP.extract_sol(resid1), VP.extract_sol(resid2), VP.extract_sol(resid3)])
 
         Deltas.append(data['objVal'])
-        rel_LP_sols.append(data['rel_LP_sol'])
+        # rel_LP_sols.append(data['rel_LP_sol'])
         Delta_bounds.append(data['objBound'])
         Delta_gaps.append(data['MIPGap'])
         times.append(data['Runtime'])
         num_bin_vars.append(data['numBinVars'])
+        maximizer_l2_norms.append(np.linalg.norm(obj))
 
         if data['Runtime'] >= cfg.relax_cutoff_time and not relax_binary_vars:
             log.info(f'FLIPPING RELAXATION AT K={k}')
@@ -302,16 +344,17 @@ def LP_run(cfg, A_supply, A_demand, mu, z0):
         #     postprocess_improv = VP.post_process(z[k], z[0], np.sum(Deltas), return_improv_frac=True)
         #     log.info(f'postprocess improv: {postprocess_improv}')
 
-        plot_data(cfg, n, m1, m2, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times)
+        plot_data(cfg, n, m1, m2, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times, maximizer_l2_norms, plot=False)
 
         print(f'samples: {max_sample_resids}')
-        print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
+        # print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
         print(f'VP residuals: {jnp.array(Deltas)}')
         print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         print(f'times:{jnp.array(times)}')
+        print(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
 
 
-def plot_data(cfg, n, m1, m2, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes):
+def plot_data(cfg, n, m1, m2, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes, maximizer_l2_norms, plot=False):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     if cfg.momentum:
         df.to_csv(cfg.momentum_resid_fname, index=False, header=False)
@@ -337,12 +380,22 @@ def plot_data(cfg, n, m1, m2, max_sample_resids, Deltas, rel_LP_sols, Delta_boun
     #     df = pd.DataFrame(theory_tighter_fracs)
     #     df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
+    df = pd.DataFrame(max_sample_resids)
+    df.to_csv('max_sample_resids.csv', index=False, header=False)
+
+    df = pd.DataFrame(maximizer_l2_norms)
+    df.to_csv('maximizer_l2_norms.csv', index=False, header=False)
+
+    if not plot:
+        return
+
     # plotting resids so far
     fig, ax = plt.subplots()
     ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
-    ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
+    # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
     ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
     ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+    ax.plot(range(1, len(maximizer_l2_norms)+1), maximizer_l2_norms, label='VP sol ltwo norms')
 
     ax.set_xlabel(r'$K$')
     ax.set_ylabel('Fixed-point residual')

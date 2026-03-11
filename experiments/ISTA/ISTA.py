@@ -41,11 +41,16 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     log.info(max_idx)
     log.info(f'max sample resids: {max_sample_resids}')
 
+    H_norm = np.linalg.norm(1 / t * jnp.eye(n) - A.T @ A, 2)
+    log.info(H_norm)
+    # exit(0)
+
     gurobi_params = {
         'TimeLimit': cfg.timelimit,
         'MIPGap': cfg.mipgap,
         # 'OutputFlag': False,
         # 'NumericFocus': 3,
+        # 'MIPFocus': 3,
     }
 
     init_C = init_dist(cfg, A, t, lambd, c_z, x_l, x_u, C_norm=cfg.C_norm)
@@ -54,8 +59,9 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     def theory_func(k):
         if k == 1:
             return np.inf
-        return 2 * init_C / np.sqrt((k-1) * (k+2))
-        # return np.inf
+        out = 2 * init_C / np.sqrt((k-1) * (k+2))
+        # log.info(f'theory rhs: {out}')
+        return out
 
     VP = Verifier(solver_params=gurobi_params, theory_func=theory_func)
 
@@ -72,8 +78,10 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
     times = []
     theory_improv_fracs = []
     num_bin_vars = []
+    maximizer_l2_norms = []
 
     relax_binary_vars = False
+    t_inv = float(1 / t)
 
     for k in range(1, K_max+1):
         log.info(f'Solving VP at k={k}')
@@ -81,11 +89,14 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         z[k] = VP.soft_threshold_step(At @ z[k-1] + Bt @ x_param, lambda_t, relax_binary_vars=relax_binary_vars)
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
 
-        VP.set_infinity_norm_objective(z[k] - z[k-1])
-        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=False)
+        # VP.set_infinity_norm_objective(z[k] - z[k-1])
+        obj = t_inv * At @ (z[k] - z[k-1])
+        VP.set_infinity_norm_objective(obj)
+        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
 
         data = VP.extract_solver_data()
         log.info(data)
+        maximizer = VP.extract_sol(obj)
 
         Deltas.append(data['objVal'])
         rel_LP_sols.append(data['rel_LP_sol'])
@@ -94,16 +105,17 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         times.append(data['Runtime'])
         num_bin_vars.append(data['numBinVars'])
         theory_improv_fracs.append(theory_improv)
+        maximizer_l2_norms.append(np.linalg.norm(maximizer))
 
         if data['Runtime'] >= cfg.relax_cutoff_time and not relax_binary_vars:
             log.info(f'FLIPPING RELAXATION AT K={k}')
             relax_binary_vars = True
 
         if cfg.postprocessing:
-            postprocess_improv = VP.post_process(z[k], z[0], np.sum(Deltas), return_improv_frac=True)
+            postprocess_improv = VP.post_process(z[k], z[0], 1 / t_inv * np.sum(Deltas), return_improv_frac=True)
             log.info(f'postprocess improv: {postprocess_improv}')
 
-        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars)
+        plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, times, theory_improv_fracs, num_bin_vars, maximizer_l2_norms, make_plots=False)
 
         log.info(f'samples: {max_sample_resids}')
         log.info(f'rel LP sols: {jnp.array(rel_LP_sols)}')
@@ -111,12 +123,13 @@ def ISTA_verifier(cfg, A, lambd, t, c_z, x_l, x_u):
         log.info(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         log.info(f'times:{jnp.array(times)}')
         log.info(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
+        log.info(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
 
         # debug(k, At, Bt, lambda_t, c_z, VP, z, x_param, data['objVal'])
         # debug_sample_max(k, At, Bt, lambda_t, VP, z[:k+1], z_samples, x_samples, max_idx, x_l, x_u)
 
 
-def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars):
+def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, solvetimes, theory_tighter_fracs, num_bin_vars, maximizer_l2_norms, make_plots=True):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     df.to_csv('resids.csv', index=False, header=False)
 
@@ -136,46 +149,55 @@ def plot_data(cfg, n, m, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, D
         df = pd.DataFrame(theory_tighter_fracs)
         df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
-    # plotting resids so far
-    fig, ax = plt.subplots()
-    ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
-    ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
-    ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
-    ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+    df = pd.DataFrame(maximizer_l2_norms)
+    df.to_csv('maximizer_l2_norms.csv', index=False, header=False)
 
-    ax.set_xlabel(r'$K$')
-    ax.set_ylabel('Fixed-point residual')
-    ax.set_yscale('log')
-    ax.set_title(rf'ISTA VP, $n={n}$, $m={m}$')
+    df = pd.DataFrame(max_sample_resids)
+    df.to_csv('max_sample_resids.csv', index=False, header=False)
 
-    ax.legend()
+    if make_plots:
 
-    plt.tight_layout()
-    plt.savefig('resids.pdf')
+        # plotting resids so far
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
+        # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
+        ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
+        ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+        ax.plot(range(1, len(maximizer_l2_norms)+1), maximizer_l2_norms, label='VP sol ltwo norms')
 
-    plt.clf()
-    plt.cla()
-    plt.close()
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Fixed-point residual')
+        ax.set_yscale('log')
+        ax.set_title(rf'ISTA VP, $n={n}$, $m={m}$')
 
-    # plotting times so far
+        ax.legend()
 
-    fig, ax = plt.subplots()
-    ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
-    # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
+        plt.tight_layout()
+        plt.savefig('resids.pdf')
 
-    ax.set_xlabel(r'$K$')
-    ax.set_ylabel('Solvetime (s)')
-    ax.set_yscale('log')
-    ax.set_title(rf'ISTA VP, $n={n}$, $m={m}$')
+        plt.clf()
+        plt.cla()
+        plt.close()
 
-    ax.legend()
+        # plotting times so far
 
-    plt.tight_layout()
-    plt.savefig('solvetimes.pdf')
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(solvetimes)+1), solvetimes, label='VP')
+        # ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM')
 
-    plt.clf()
-    plt.cla()
-    plt.close()
+        ax.set_xlabel(r'$K$')
+        ax.set_ylabel('Solvetime (s)')
+        ax.set_yscale('log')
+        ax.set_title(rf'ISTA VP, $n={n}$, $m={m}$')
+
+        ax.legend()
+
+        plt.tight_layout()
+        plt.savefig('solvetimes.pdf')
+
+        plt.clf()
+        plt.cla()
+        plt.close()
 
 
 def debug(K, At, Bt, lambda_t, c_z, VP, zk_vals, x_param, obj):
@@ -243,7 +265,7 @@ def soft_threshold(x, gamma):
     return jnp.sign(x) * jax.nn.relu(jnp.abs(x) - gamma)
 
 
-def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
+def ISTA_alg(At, Bt, z0, x, t, lambda_t, K, pnorm=1):
     n = At.shape[0]
     # yk_all = jnp.zeros((K+1, n))
     zk_all = jnp.zeros((K+1, n))
@@ -259,9 +281,9 @@ def ISTA_alg(At, Bt, z0, x, lambda_t, K, pnorm=1):
         zkplus1 = soft_threshold(ykplus1, lambda_t)
 
         if pnorm == 'inf':
-            resid = jnp.max(jnp.abs(zkplus1 - zk))
+            resid = 1 / t * jnp.max(jnp.abs(At @ (zkplus1 - zk)))
         else:
-            resid = jnp.linalg.norm(zkplus1 - zk, ord=pnorm)
+            resid = 1 / t * jnp.linalg.norm(At @ (zkplus1 - zk), ord=pnorm)
 
         zk_all = zk_all.at[k+1].set(zkplus1)
         resids = resids.at[k+1].set(resid)
@@ -291,7 +313,7 @@ def samples(cfg, A, lambd, t, c_z, x_l, x_u):
     x_samples = jax.vmap(x_sample)(sample_idx)
 
     def ista_resids(i):
-        return ISTA_alg(At, Bt, z_samples[i], x_samples[i], lambda_t, cfg.K_max, pnorm=cfg.pnorm)
+        return ISTA_alg(At, Bt, z_samples[i], x_samples[i], t, lambda_t, cfg.K_max, pnorm=cfg.pnorm)
 
     _, sample_resids = jax.vmap(ista_resids)(sample_idx)
     log.info(sample_resids)
@@ -330,7 +352,7 @@ def samples_diffK(cfg, A, lambd, t, c_z, x_l, x_u):
 
         x_samples_k = jax.vmap(x_sample)(sample_idx)
         def ista_resids(i):
-            return ISTA_alg(At, Bt, z_samples[i], x_samples_k[i], lambda_t, k, pnorm=cfg.pnorm)
+            return ISTA_alg(At, Bt, z_samples[i], x_samples_k[i], t, lambda_t, k, pnorm=cfg.pnorm)
 
         _, sample_resids = jax.vmap(ista_resids)(sample_idx)
         log.info(sample_resids)
@@ -552,7 +574,9 @@ def sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
 
 def init_dist(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=2):
     SM_initC, z_samp, x_samp = sample_radius(cfg, A, t, lambd, c_z, x_LB, x_UB, C_norm=C_norm)
-    log.info(SM_initC)
+    log.info(f'sample max radius: {SM_initC}')
+
+    # return SM_initC
 
     m, n = A.shape
     model = gp.Model()

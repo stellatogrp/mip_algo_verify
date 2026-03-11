@@ -3,9 +3,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
-#SBATCH --mem-per-cpu=2G
-#SBATCH --time=00-23:59:59
-#SBATCH --array=0-3
+#SBATCH --mem-per-cpu=3G
+#SBATCH --time=03:59:59
+#SBATCH --array=0-1
 #SBATCH -o /scratch/gpfs/BSTELLATO/vranjan/mip_algo_verify_out/LP/runs/%A.txt
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=vranjan@princeton.edu
@@ -17,9 +17,9 @@
 # export xla_force_host_platform_device_count=1
 
 module purge
-module load gurobi/13.0.0
-module load anaconda3/2025.12
+module load gurobi/12.0.0
+module load anaconda3/2024.10
 # module load anaconda3/2023.9 cudnn/cuda-11.x/8.2.0 cudatoolkit/11.3 nvhpc/21.5
 conda activate algover
 
-python run_experiment.py LP cluster
+python pep_experiment.py LP cluster

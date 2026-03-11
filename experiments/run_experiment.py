@@ -62,31 +62,31 @@ func_driver_map = {
 
 
 LP_params = [
-    ['momentum=False', 'K_max=50', 'huchette_cuts=True'],
-    ['momentum=False', 'K_max=50', 'huchette_cuts=False'],
-    ['momentum=True', 'K_max=50', 'huchette_cuts=True'],
-    ['momentum=True', 'K_max=50', 'huchette_cuts=False'],
+    ['momentum=False', 'K_max=70', 'huchette_cuts=True'],
+    ['momentum=True', 'K_max=70', 'huchette_cuts=True'],
+    ['momentum=False', 'K_max=70', 'huchette_cuts=False'],
+    ['momentum=True', 'K_max=70', 'huchette_cuts=False'],
 ]
 
 ISTA_params = [
-    ['m=25', 'n=20', 'huchette_cuts=True'],
-    ['m=20', 'n=25', 'huchette_cuts=True'],
-    ['m=25', 'n=20', 'huchette_cuts=False'],
-    ['m=20', 'n=25', 'huchette_cuts=False'],
+    ['m=15', 'n=20', 'huchette_cuts=True'],
+    ['m=20', 'n=15', 'huchette_cuts=True'],
+    ['m=15', 'n=20', 'huchette_cuts=False'],
+    ['m=20', 'n=15', 'huchette_cuts=False'],
 ]
 
 # add FISTA params
 FISTA_params = [
-    ['m=25', 'n=20', 'huchette_cuts=True'],
-    ['m=20', 'n=25', 'huchette_cuts=True'],
-    ['m=25', 'n=20', 'huchette_cuts=False'],
-    ['m=20', 'n=25', 'huchette_cuts=False'],
+    ['m=15', 'n=20', 'huchette_cuts=True'],
+    ['m=20', 'n=15', 'huchette_cuts=True'],
+    ['m=15', 'n=20', 'huchette_cuts=False'],
+    ['m=20', 'n=15', 'huchette_cuts=False'],
 ]
 
 MPC_params = [
+    ['rho=0.1'],
     ['rho=1'],
     ['rho=10'],
-    ['rho=100'],
 ]
 
 def main():
@@ -95,7 +95,7 @@ def main():
         exit(0)
     if sys.argv[2] == 'cluster':
         # raise NotImplementedError
-        base_dir = '/scratch/gpfs/vranjan/mip_algo_verify_out'
+        base_dir = '/scratch/gpfs/BSTELLATO/vranjan/mip_algo_verify_out'
     elif sys.argv[2] == 'local':
         base_dir = '.'
     else:

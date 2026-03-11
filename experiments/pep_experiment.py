@@ -59,9 +59,9 @@ func_driver_map = {
 
 
 LP_params = [
-    ['momentum=False', 'K_max=50', 'huchette_cuts=True'],
+    ['momentum=False', 'K_max=70', 'huchette_cuts=True'],
+    ['momentum=True', 'K_max=70', 'huchette_cuts=True'],
     ['momentum=False', 'K_max=50', 'huchette_cuts=False'],
-    ['momentum=True', 'K_max=50', 'huchette_cuts=True'],
     ['momentum=True', 'K_max=50', 'huchette_cuts=False'],
 ]
 
@@ -90,7 +90,7 @@ def main():
         exit(0)
     if sys.argv[2] == 'cluster':
         # raise NotImplementedError
-        base_dir = '/scratch/gpfs/vranjan/mip_algo_verify_out'
+        base_dir = '/scratch/gpfs/BSTELLATO/vranjan/mip_algo_verify_out'
     elif sys.argv[2] == 'local':
         base_dir = '.'
     else:

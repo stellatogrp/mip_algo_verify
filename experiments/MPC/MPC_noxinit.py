@@ -55,7 +55,11 @@ def jax_osqp_fixedpt(K_max, P, B, A, l, u, xinit_samp, z0, v0, rho, sigma):
         zkplus1 = jnp.linalg.solve(lhs_mat, sigma * zk - B @ xinit_samp + A.T @ rho @ (2 * wkplus1 - vk))
         vkplus1 = vk + A @ zkplus1 - wkplus1
 
-        resid = jnp.maximum(jnp.max(jnp.abs(zkplus1 - zk)), jnp.max(jnp.abs(vkplus1 - vk)))
+        # resid = jnp.maximum(jnp.max(jnp.abs(zkplus1 - zk)), jnp.max(jnp.abs(vkplus1 - vk)))
+        resid1 = sigma * (zkplus1 - zk) + A.T @ rho @ (vkplus1 - vk)
+        resid2 = vk - vkplus1
+
+        resid = jnp.maximum(jnp.max(jnp.abs(resid1)), jnp.max(jnp.abs(resid2)))
 
         zk_all = zk_all.at[k+1].set(zkplus1)
         vk_all = vk_all.at[k+1].set(vkplus1)
@@ -129,7 +133,7 @@ def max_radius(cfg, qc, P, B, A, l_rest, u_rest, xinit_l, xinit_u, z0, v0):
     model.setParam('MIPGap', cfg.mipgap)
 
     M = cfg.init_dist_M
-    w_omega1 = model.addMvar(n, vtype=gp.GRB.BINARY)
+    w_omega1 = model.addMVar(n, vtype=gp.GRB.BINARY)
     w_omega2 = model.addMVar(n, vtype=gp.GRB.BINARY)
 
     model.addConstr((P + sigma * np.eye(n) + A.T @ rho @ A) @ zstar == sigma * zstar - B @ x + A.T @ rho @ (2 * wstar - vstar))
@@ -185,19 +189,12 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
 
     log.info(f'mu, L, tau = {mu, L, tau}')
 
-    def theory_func(k):
-        R = 8.31227985242667
-        # return np.sqrt(R ** 2 / k + 1)
-        if k == 1:
-            return np.inf
-        return (1 + tau) * (tau ** (k-1)) * R
-
     # xinit = qc.xinit
     # offset = 0.1
     # xinit_l = xinit - offset
     # xinit_u = xinit + offset
 
-    xinit_l = np.array([0., 0., 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
+    xinit_l = np.array([-np.pi/6, -np.pi/6, 0., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
     xinit_u = np.array([np.pi/6,np.pi/6, 1., 0.,0.,0.,0.,0.,0.,0.,0.,0.])
 
     # z0 = jnp.zeros(P.shape[0])
@@ -210,6 +207,15 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     max_sample_resids, x_samples = samples(cfg, qc, jnp.array(P.todense()), jnp.array(B.todense()), jnp.array(A.todense()), jnp.array(l), jnp.array(u), jnp.array(xinit_l), jnp.array(xinit_u), z0, v0)
     log.info(max_sample_resids)
 
+    max_radius(cfg, qc, np.array(P.todense()), np.array(B.todense()), np.array(A.todense()), np.array(l), np.array(u), np.array(xinit_l), np.array(xinit_u), np.array(z0), np.array(v0))
+
+    def theory_func(k):
+        R = 8.31227985242667
+        # return np.sqrt(R ** 2 / k + 1)
+        if k == 1:
+            return np.inf
+        return (1 + tau) * (tau ** (k-1)) * R
+
     # df = pd.DataFrame(max_sample_resids)
     # df.to_csv('max_sample_resids.csv', index=False, header=False)
 
@@ -220,6 +226,14 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     }
 
     VP = Verifier(solver_params=gurobi_params, obbt=False, theory_func=theory_func)
+
+    H = spa.bmat([
+        [-sigma * spa.eye(P.todense().shape[0]), -rho * A.T],
+        [None, spa.eye(A.shape[0])],
+    ])
+    H_norm = spa.linalg.norm(H, 2)
+    log.info(f'H_norm: {H_norm}')
+    exit(0)
 
     # q_param = VP.add_param(q.shape[0], lb=q, ub=q)
 
@@ -248,10 +262,11 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     Deltas = []
     rel_LP_sols = []
     Delta_bounds = []
-    # Delta_gaps = []
+    Delta_gaps = []
     times = []
     theory_improv_fracs = []
-    # num_bin_vars = []
+    num_bin_vars = []
+    maximizer_l2_norms = []
 
     relax_binary_vars = False
 
@@ -270,27 +285,37 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
         theory_improv = VP.theory_bound(k, z[k], z[k-1])
         v[k] = v[k-1] + A @ z[k] - w[k]
 
-        VP.set_infinity_norm_objective([z[k] - z[k-1], v[k] - v[k-1]])
-        # VP.solve(huchette_cuts=True, include_rel_LP_sol=False)
+        resid1 = sigma * (z[k] - z[k-1]) + A.T @ rho @ (v[k] - v[k-1])
+        resid2 = v[k-1] - v[k]
 
-        # data = VP.extract_solver_data()
-        # print(data)
-        # Deltas.append(data['objVal'])
-        # rel_LP_sols.append(data['rel_LP_sol'])
-        # Delta_bounds.append(data['objBound'])
-        # Delta_gaps.append(data['MIPGap'])
-        # times.append(data['Runtime'])
-        # num_bin_vars.append(data['numBinVars'])
+        # VP.set_infinity_norm_objective([z[k] - z[k-1], v[k] - v[k-1]])
+        VP.set_infinity_norm_objective([resid1, resid2])
+        VP.solve(huchette_cuts=cfg.huchette_cuts, include_rel_LP_sol=True)
+
+        data = VP.extract_solver_data()
+        print(data)
+        max1 = VP.extract_sol(resid1)
+        max2 = VP.extract_sol(resid2)
+        obj = np.concatenate([max1, max2])
+
+        Deltas.append(data['objVal'])
+        rel_LP_sols.append(data['rel_LP_sol'])
+        Delta_bounds.append(data['objBound'])
+        Delta_gaps.append(data['MIPGap'])
+        times.append(data['Runtime'])
+        num_bin_vars.append(data['numBinVars'])
+        maximizer_l2_norms.append(np.linalg.norm(obj))
 
         theory_improv_fracs.append(theory_improv)
 
-        # plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times)
+        plot_data(cfg, cfg.T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, times, maximizer_l2_norms, plot=False)
 
         print(f'samples: {max_sample_resids}')
         print(f'rel LP sols: {jnp.array(rel_LP_sols)}')
         print(f'VP residuals: {jnp.array(Deltas)}')
         print(f'VP residual bounds: {jnp.array(Delta_bounds)}')
         print(f'theory improv fracs: {jnp.array(theory_improv_fracs)}')
+        print(f'maximizer l2 norms: {jnp.array(maximizer_l2_norms)}')
         print(f'times:{jnp.array(times)}')
 
     # xinit_vp = VP.extract_sol(xinit_param)
@@ -301,7 +326,7 @@ def osqp_run(cfg, qc, P, q, A, l, u, x_ws):
     # log.info(VP.extract_sol(z[k]))
 
 
-def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes, plot=False):
+def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delta_gaps, num_bin_vars, solvetimes, maximizer_l2_norms, plot=False):
     df = pd.DataFrame(Deltas)  # remove the first column of zeros
     df.to_csv('resids.csv', index=False, header=False)
 
@@ -324,15 +349,19 @@ def plot_data(cfg, T, max_sample_resids, Deltas, rel_LP_sols, Delta_bounds, Delt
     #     df = pd.DataFrame(theory_tighter_fracs)
     #     df.to_csv('theory_tighter_fracs.csv', index=False, header=False)
 
+    df = pd.DataFrame(maximizer_l2_norms)
+    df.to_csv('maximizer_l2_norms.csv', index=False, header=False)
+
     if not plot:
         return
 
     # plotting resids so far
     fig, ax = plt.subplots()
     ax.plot(range(1, len(Deltas)+1), Deltas, label='VP')
-    ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
+    # ax.plot(range(1, len(rel_LP_sols)+1), rel_LP_sols, label='LP relaxations')
     ax.plot(range(1, len(Delta_bounds)+1), Delta_bounds, label='VP bounds', linewidth=5, alpha=0.3)
     ax.plot(range(1, len(max_sample_resids)+1), max_sample_resids, label='SM', linewidth=5, alpha=0.3)
+    ax.plot(range(1, len(maximizer_l2_norms)+1), maximizer_l2_norms, label='VP sol ltwo norms')
 
     ax.set_xlabel(r'$K$')
     ax.set_ylabel('Fixed-point residual')
